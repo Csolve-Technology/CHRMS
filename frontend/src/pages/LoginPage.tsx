@@ -10,7 +10,8 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
 import { toast } from '@/hooks/use-toast';
-import { Building2, Chrome, Github, Loader2 } from 'lucide-react';
+import { Chrome, Github, Loader2 } from 'lucide-react';
+import { ChiroLogo } from '@/components/chrms/ChiroLogo';
 
 const LoginPage: React.FC = () => {
   const [email, setEmail] = useState('');
@@ -83,7 +84,13 @@ const LoginPage: React.FC = () => {
   if (authMode === 'keycloak') return (
     <div className="min-h-screen flex items-center justify-center p-4 bg-background">
       <Card className="w-full max-w-md shadow-lg">
-        <CardHeader><CardTitle>Chiro City Housing &amp; Rental Management</CardTitle><CardDescription>Use your Chiro Auth account to access CHRMS.</CardDescription></CardHeader>
+        <CardHeader className="space-y-4 text-center">
+          <ChiroLogo size={88} className="mx-auto" />
+          <div>
+            <CardTitle>Chiro City Housing &amp; Rental Management</CardTitle>
+            <CardDescription className="mt-2">Use your Chiro Auth account to access CHRMS.</CardDescription>
+          </div>
+        </CardHeader>
         <CardContent className="space-y-4">
           {lastError && <p role="alert" className="text-destructive">{lastError}</p>}
           <Button className="w-full" disabled={isLoading} onClick={() => handleSSOLogin('Chiro Auth')}>Sign in with Chiro Auth</Button>
@@ -100,11 +107,8 @@ const LoginPage: React.FC = () => {
         <ThemeSwitcher />
       </div>
       <div className="w-full max-w-md space-y-8" data-id="hjwo2jiph" data-path="src/pages/LoginPage.tsx">
-        {/* Logo and Header */}
         <div className="text-center" data-id="oq8qgjhxk" data-path="src/pages/LoginPage.tsx">
-          <div className="mx-auto h-16 w-16 bg-gradient-to-r from-blue-600 to-cyan-600 rounded-xl flex items-center justify-center mb-4" data-id="wkufmetdd" data-path="src/pages/LoginPage.tsx">
-            <Building2 className="h-8 w-8 text-white" data-id="famyievx9" data-path="src/pages/LoginPage.tsx" />
-          </div>
+          <ChiroLogo size={96} className="mx-auto mb-4" />
           <h1 className="text-3xl font-bold text-foreground">{t('app.title')}</h1>
           <p className="text-muted-foreground mt-2">
             {t('login.subtitle')}

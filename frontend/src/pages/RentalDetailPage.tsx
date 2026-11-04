@@ -54,6 +54,31 @@ type PaymentRow = {
   receiptNo: string | null;
 };
 
+type PeriodMonth = {
+  year: number;
+  month: number;
+  label: string;
+  dueDate: string;
+  expected: number;
+  paid: number;
+  balance: number;
+  status: "paid" | "partial" | "unpaid" | "overdue" | "upcoming";
+};
+
+type PeriodSummary = {
+  rentalDueDay: number;
+  monthsExpected: number;
+  monthsPaid: number;
+  monthsPartial: number;
+  monthsUnpaid: number;
+  monthsOverdue: number;
+  monthsUpcoming: number;
+  totalExpected: number;
+  totalPaid: number;
+  outstandingBalance: number;
+  months: PeriodMonth[];
+};
+
 type RentalDetail = {
   id: string;
   status: string;
@@ -67,6 +92,7 @@ type RentalDetail = {
   paymentStatus?: MonthRentStatus | null;
   paidThisMonth?: number | null;
   balanceDue?: number | null;
+  period?: PeriodSummary;
   tenant: {
     id: string;
     fullName: string;
@@ -85,6 +111,46 @@ type RentalDetail = {
   };
   payments: PaymentRow[];
 };
+
+function MonthStatusBadge({ status }: { status: PeriodMonth["status"] }) {
+  switch (status) {
+    case "paid":
+      return (
+        <Badge className="bg-emerald-600 hover:bg-emerald-600 font-normal">
+          Paid
+        </Badge>
+      );
+    case "partial":
+      return (
+        <Badge className="bg-amber-500 hover:bg-amber-500 font-normal">
+          Partial
+        </Badge>
+      );
+    case "overdue":
+      return (
+        <Badge variant="destructive" className="gap-1 font-normal">
+          <AlertTriangle className="h-3 w-3" />
+          Overdue
+        </Badge>
+      );
+    case "upcoming":
+      return (
+        <Badge variant="outline" className="font-normal">
+          Upcoming
+        </Badge>
+      );
+    default:
+      return (
+        <Badge variant="secondary" className="font-normal">
+          Unpaid
+        </Badge>
+      );
+  }
+}
+
+function etb(n: number) {
+  return `ETB ${n.toLocaleString()}`;
+}
 
 export default function RentalDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -128,6 +194,7 @@ export default function RentalDetailPage() {
       qc.invalidateQueries({ queryKey: ["rental", id] });
       qc.invalidateQueries({ queryKey: ["rental-payments"] });
       qc.invalidateQueries({ queryKey: ["rentals"] });
+      qc.invalidateQueries({ queryKey: ["payments"] });
       qc.invalidateQueries({ queryKey: ["notifications"] });
     },
     onError: (err) => {
@@ -150,6 +217,8 @@ export default function RentalDetailPage() {
     );
   }
 
+  const period = data.period;
+
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center gap-3">
@@ -165,27 +234,67 @@ export default function RentalDetailPage() {
         </Badge>
         {data.status === "active" && data.paymentStatus === "paid" ? (
           <Badge className="bg-emerald-600 hover:bg-emerald-600 font-normal">
-            This month: Paid · Balance ETB 0
+            This month: Paid
           </Badge>
         ) : data.status === "active" && data.paymentStatus === "partial" ? (
           <Badge className="bg-amber-500 hover:bg-amber-500 font-normal">
-            This month: Partial · Balance ETB{" "}
-            {Number(data.balanceDue ?? 0).toLocaleString()}
+            This month: Partial · {etb(Number(data.balanceDue ?? 0))}
           </Badge>
         ) : data.status === "active" && data.paymentStatus === "overdue" ? (
           <Badge variant="destructive" className="gap-1 font-normal">
             <AlertTriangle className="h-3 w-3" />
-            Overdue · Balance ETB {Number(data.balanceDue ?? 0).toLocaleString()}
+            Overdue · {etb(Number(data.balanceDue ?? 0))}
           </Badge>
         ) : data.status === "active" && data.paymentStatus === "unpaid" ? (
           <Badge variant="secondary" className="font-normal">
-            Unpaid · Balance ETB {Number(data.balanceDue ?? 0).toLocaleString()}
+            Unpaid · {etb(Number(data.balanceDue ?? 0))}
           </Badge>
         ) : data.status === "active" ? (
           <Badge variant="secondary" className="font-normal">
             This month: {formatMonthRentStatus(data.paymentStatus)}
           </Badge>
         ) : null}
+      </div>
+
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <Card>
+          <CardHeader className="pb-2">
+            <CardDescription>Total expected rent</CardDescription>
+            <CardTitle className="text-xl">
+              {etb(period?.totalExpected ?? 0)}
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="pt-0 text-xs text-muted-foreground">
+            {etb(data.monthlyRent)} × {period?.monthsExpected ?? 0} months
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="pb-2">
+            <CardDescription>Payments received</CardDescription>
+            <CardTitle className="text-xl text-emerald-700 dark:text-emerald-400">
+              {etb(period?.totalPaid ?? 0)}
+            </CardTitle>
+          </CardHeader>
+        </Card>
+        <Card>
+          <CardHeader className="pb-2">
+            <CardDescription>Outstanding</CardDescription>
+            <CardTitle className="text-xl text-amber-700 dark:text-amber-400">
+              {etb(period?.outstandingBalance ?? 0)}
+            </CardTitle>
+          </CardHeader>
+        </Card>
+        <Card>
+          <CardHeader className="pb-2">
+            <CardDescription>Months</CardDescription>
+            <CardTitle className="text-base font-semibold leading-snug">
+              {period?.monthsPaid ?? 0} paid · {period?.monthsUnpaid ?? 0} unpaid
+              {(period?.monthsOverdue ?? 0) > 0
+                ? ` · ${period?.monthsOverdue} overdue`
+                : ""}
+            </CardTitle>
+          </CardHeader>
+        </Card>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -204,7 +313,7 @@ export default function RentalDetailPage() {
               </Link>
             </p>
             <p>
-              Woreda {data.property.woreda}, Kebele {data.property.kebele}, #
+              Woreda/City {data.property.woreda}, Kebele {data.property.kebele}, #
               {data.property.houseNumber}
             </p>
             {data.property.type ? (
@@ -242,6 +351,9 @@ export default function RentalDetailPage() {
       <Card>
         <CardHeader>
           <CardTitle>Lease terms</CardTitle>
+          <CardDescription>
+            Due day {period?.rentalDueDay ?? "—"} of each month (from settings)
+          </CardDescription>
         </CardHeader>
         <CardContent className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm">
           <p>
@@ -264,35 +376,87 @@ export default function RentalDetailPage() {
             )}
           </p>
           <p>
-            <span className="text-muted-foreground">Monthly rent:</span> ETB{" "}
-            {data.monthlyRent.toLocaleString()}
+            <span className="text-muted-foreground">Monthly rent:</span>{" "}
+            {etb(data.monthlyRent)}
           </p>
           <p>
             <span className="text-muted-foreground">Security deposit:</span>{" "}
             {data.deposit != null && data.deposit !== ""
-              ? `ETB ${Number(data.deposit).toLocaleString()} (held, not rent)`
+              ? `${etb(Number(data.deposit))} (held, not rent)`
               : "—"}
           </p>
-          <p className="sm:col-span-2 text-xs text-muted-foreground">
-            {rentalStatusHelp(data.status)}
-          </p>
           <p>
-            <span className="text-muted-foreground">Start:</span>{" "}
+            <span className="text-muted-foreground">Start date:</span>{" "}
             {format(new Date(data.startDate), "MMM d, yyyy")}
           </p>
           <p>
-            <span className="text-muted-foreground">End:</span>{" "}
+            <span className="text-muted-foreground">End date:</span>{" "}
             {data.endDate
               ? format(new Date(data.endDate), "MMM d, yyyy")
               : "Open-ended"}
           </p>
+          <p className="sm:col-span-2 text-xs text-muted-foreground">
+            {rentalStatusHelp(data.status)}
+          </p>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Monthly payment breakdown</CardTitle>
+          <CardDescription>
+            Paid, unpaid, and overdue months from lease start through end (or
+            today if open-ended), synced with payment records
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {!period || period.months.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              No billable months yet
+            </p>
+          ) : (
+            <div className="rounded-md border overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow className="bg-muted/40">
+                    <TableHead>Month</TableHead>
+                    <TableHead>Due date</TableHead>
+                    <TableHead className="text-right">Expected</TableHead>
+                    <TableHead className="text-right">Paid</TableHead>
+                    <TableHead className="text-right">Balance</TableHead>
+                    <TableHead>Status</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {[...period.months].reverse().map((m) => (
+                    <TableRow key={`${m.year}-${m.month}`}>
+                      <TableCell className="font-medium">{m.label}</TableCell>
+                      <TableCell className="text-sm whitespace-nowrap">
+                        {format(new Date(m.dueDate), "MMM d, yyyy")}
+                      </TableCell>
+                      <TableCell className="text-right">{etb(m.expected)}</TableCell>
+                      <TableCell className="text-right text-emerald-700 dark:text-emerald-400">
+                        {etb(m.paid)}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        {m.balance > 0 ? etb(m.balance) : "—"}
+                      </TableCell>
+                      <TableCell>
+                        <MonthStatusBadge status={m.status} />
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
         </CardContent>
       </Card>
 
       <Card>
         <CardHeader className="flex flex-row items-center justify-between space-y-0">
           <div>
-            <CardTitle>Payments</CardTitle>
+            <CardTitle>Payment history</CardTitle>
             <CardDescription>
               Security deposit and rent receipts (newest first). Deposit does
               not count toward monthly rent.
@@ -416,9 +580,7 @@ export default function RentalDetailPage() {
                       <TableCell>
                         {format(new Date(p.paidAt), "MMM d, yyyy")}
                       </TableCell>
-                      <TableCell>
-                        ETB {Number(p.amount).toLocaleString()}
-                      </TableCell>
+                      <TableCell>{etb(Number(p.amount))}</TableCell>
                       <TableCell>
                         {formatPaymentMethod(p.method)}
                         {p.method === SECURITY_DEPOSIT_METHOD ? (

@@ -18,7 +18,11 @@ import {
   SECURITY_DEPOSIT_METHOD,
   type RentalStatus,
 } from './rental-payment.constants';
-import { getMonthRentStatus, paidInMonth } from './rental-overdue.util';
+import {
+  buildRentalPeriodSummary,
+  getMonthRentStatus,
+  paidInMonth,
+} from './rental-overdue.util';
 import { CreateRentalDto } from './dto/create-rental.dto';
 import { UpdateRentalDto } from './dto/update-rental.dto';
 
@@ -149,6 +153,14 @@ export class RentalsService {
         paidThisMonth == null
           ? null
           : Math.max(0, Math.round((monthlyRent - paidThisMonth) * 100) / 100);
+      const period = buildRentalPeriodSummary(
+        r.monthlyRent,
+        r.payments,
+        r.startDate,
+        r.endDate,
+        rentalDueDay,
+        now,
+      );
       return {
         id: r.id,
         status: r.status,
@@ -173,9 +185,16 @@ export class RentalsService {
           houseNumber: r.property.houseNumber,
         },
         paymentStatus,
-        overdue: paymentStatus === 'overdue',
+        overdue: paymentStatus === 'overdue' || period.monthsOverdue > 0,
         paidThisMonth,
         balanceDue,
+        totalExpected: period.totalExpected,
+        totalPaid: period.totalPaid,
+        outstandingBalance: period.outstandingBalance,
+        monthsPaid: period.monthsPaid,
+        monthsUnpaid: period.monthsUnpaid,
+        monthsOverdue: period.monthsOverdue,
+        monthsExpected: period.monthsExpected,
       };
     });
 
@@ -213,14 +232,23 @@ export class RentalsService {
       paidThisMonth == null
         ? null
         : Math.max(0, Math.round((monthlyRent - paidThisMonth) * 100) / 100);
+    const period = buildRentalPeriodSummary(
+      r.monthlyRent,
+      r.payments,
+      r.startDate,
+      r.endDate,
+      rentalDueDay,
+      now,
+    );
     return {
       ...r,
       monthlyRent,
       deposit: r.deposit ? Number(r.deposit) : null,
       paymentStatus,
-      overdue: paymentStatus === 'overdue',
+      overdue: paymentStatus === 'overdue' || period.monthsOverdue > 0,
       paidThisMonth,
       balanceDue,
+      period,
     };
   }
 

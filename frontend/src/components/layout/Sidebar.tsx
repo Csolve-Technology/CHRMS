@@ -7,18 +7,17 @@ import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import {
-  Building2,
   BarChart3,
   Home,
   Users,
   FileText,
-  Banknote,
   CreditCard,
   Settings,
   Shield,
   LogOut,
   ChevronRight,
 } from "lucide-react";
+import { ChiroLogo } from "@/components/chrms/ChiroLogo";
 
 interface SidebarProps {
   isCollapsed: boolean;
@@ -33,8 +32,12 @@ const menuItems: {
   { titleKey: "nav.dashboard", icon: BarChart3, href: "/dashboard", permission: "dashboard.view" },
   { titleKey: "nav.properties", icon: Home, href: "/properties", permission: "properties.read" },
   { titleKey: "nav.tenants", icon: Users, href: "/tenants", permission: "tenants.read" },
-  { titleKey: "nav.rentals", icon: FileText, href: "/rentals", permission: "rentals.read" },
-  { titleKey: "nav.sales", icon: Banknote, href: "/sales", permission: "sales.read" },
+  {
+    titleKey: "nav.rentals",
+    icon: FileText,
+    href: "/rentals",
+    permission: "rentals.read",
+  },
   { titleKey: "nav.payments", icon: CreditCard, href: "/payments", permission: "payments.read" },
   { titleKey: "nav.reports", icon: BarChart3, href: "/reports", permission: "reports.view" },
 ];
@@ -68,14 +71,12 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed }) => {
       } h-full flex flex-col`}
     >
       <div className="p-4 border-b border-border">
-        <div className="flex items-center space-x-3">
-          <div className="h-8 w-8 bg-gradient-to-r from-blue-600 to-cyan-600 rounded-lg flex items-center justify-center">
-            <Building2 className="h-5 w-5 text-white" />
-          </div>
+        <div className={`flex items-center ${isCollapsed ? "justify-center" : "space-x-3"}`}>
+          <ChiroLogo size={isCollapsed ? 36 : 40} />
           {!isCollapsed && (
-            <div>
-              <h1 className="text-lg font-bold text-foreground">{t("app.title")}</h1>
-              <p className="text-xs text-muted-foreground">{t("app.subtitle")}</p>
+            <div className="min-w-0">
+              <h1 className="text-lg font-bold text-foreground leading-tight">{t("app.title")}</h1>
+              <p className="text-xs text-muted-foreground truncate">{t("app.subtitle")}</p>
             </div>
           )}
         </div>

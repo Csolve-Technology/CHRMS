@@ -189,6 +189,7 @@ export default function PaymentsPage() {
       setRentalForm(emptyRentalForm);
       qc.invalidateQueries({ queryKey: ["rental-payments"] });
       qc.invalidateQueries({ queryKey: ["rentals"] });
+      qc.invalidateQueries({ queryKey: ["rental"] });
       qc.invalidateQueries({ queryKey: ["notifications"] });
     },
     onError: (err) => {
@@ -215,6 +216,7 @@ export default function PaymentsPage() {
       setSaleForm(emptySaleForm);
       qc.invalidateQueries({ queryKey: ["sale-payments"] });
       qc.invalidateQueries({ queryKey: ["sales"] });
+      qc.invalidateQueries({ queryKey: ["sale"] });
     },
     onError: (err) => {
       toast({

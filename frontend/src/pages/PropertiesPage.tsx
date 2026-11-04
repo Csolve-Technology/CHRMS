@@ -73,11 +73,11 @@ export default function PropertiesPage() {
     code: "",
     type: "residential",
     category: "kebele",
-    woreda: "",
+    woreda: "Chiro City",
     kebele: "",
     houseNumber: "",
-    rooms: "3",
-    area: "70",
+    rooms: "",
+    area: "",
     latitude: "",
     longitude: "",
   });
@@ -148,11 +148,11 @@ export default function PropertiesPage() {
         code: "",
         type: "residential",
         category: "kebele",
-        woreda: "",
+        woreda: "Chiro City",
         kebele: "",
         houseNumber: "",
-        rooms: "3",
-        area: "70",
+        rooms: "",
+        area: "",
         latitude: "",
         longitude: "",
       });
@@ -277,7 +277,7 @@ export default function PropertiesPage() {
                   </Select>
                 </div>
                 <div>
-                  <Label>Woreda</Label>
+                  <Label>Woreda/City</Label>
                   <Input
                     value={form.woreda}
                     onChange={(e) =>

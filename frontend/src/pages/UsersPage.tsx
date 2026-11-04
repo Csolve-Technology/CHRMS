@@ -88,7 +88,8 @@ function initials(name: string) {
 }
 
 export default function UsersPage() {
-  const { user: currentUser } = useAuth();
+  const { user: currentUser, authMode } = useAuth();
+  const localIdentity = authMode === "local";
   const qc = useQueryClient();
   const [activeTab, setActiveTab] = useState("users");
   const [searchTerm, setSearchTerm] = useState("");
@@ -154,6 +155,9 @@ export default function UsersPage() {
 
   const createMutation = useMutation({
     mutationFn: async () => {
+      if (!localIdentity) {
+        throw new Error("Manage accounts, roles and passwords in Chiro Auth.");
+      }
       await api.post("/users", {
         email: createForm.email.trim(),
         fullName: createForm.fullName.trim(),
@@ -190,12 +194,12 @@ export default function UsersPage() {
         role?: ChrmsUser["role"];
         password?: string;
       } = {
-        email: editForm.email.trim(),
         fullName: editForm.fullName.trim(),
-        role: editForm.role,
       };
-      if (editForm.password.trim()) {
-        body.password = editForm.password;
+      if (localIdentity) {
+        body.email = editForm.email.trim();
+        body.role = editForm.role;
+        if (editForm.password.trim()) body.password = editForm.password;
       }
       await api.patch(`/users/${editing.id}`, body);
     },
@@ -217,6 +221,9 @@ export default function UsersPage() {
 
   const deleteMutation = useMutation({
     mutationFn: async (id: string) => {
+      if (!localIdentity) {
+        throw new Error("Manage accounts, roles and passwords in Chiro Auth.");
+      }
       await api.delete(`/users/${id}`);
     },
     onSuccess: () => {
@@ -257,6 +264,14 @@ export default function UsersPage() {
 
   const submitCreate = (e: React.FormEvent) => {
     e.preventDefault();
+    if (!localIdentity) {
+      toast({
+        title: "Managed in Chiro Auth",
+        description: "Create users and assign ADMIN / HOUSING_OFFICER roles in Chiro Auth.",
+        variant: "destructive",
+      });
+      return;
+    }
     if (
       !createForm.email.trim() ||
       !createForm.fullName.trim() ||
@@ -275,7 +290,15 @@ export default function UsersPage() {
   const submitEdit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!editing) return;
-    if (!editForm.email.trim() || !editForm.fullName.trim()) {
+    if (!editForm.fullName.trim()) {
+      toast({
+        title: "Check form",
+        description: "Full name is required.",
+        variant: "destructive",
+      });
+      return;
+    }
+    if (localIdentity && !editForm.email.trim()) {
       toast({
         title: "Check form",
         description: "Email and full name are required.",
@@ -283,7 +306,7 @@ export default function UsersPage() {
       });
       return;
     }
-    if (editForm.password && editForm.password.length < 8) {
+    if (localIdentity && editForm.password && editForm.password.length < 8) {
       toast({
         title: "Invalid password",
         description: "New password must be at least 8 characters, or leave blank.",
@@ -306,91 +329,125 @@ export default function UsersPage() {
         <div>
           <h1 className="text-3xl font-bold tracking-tight">User management</h1>
           <p className="text-muted-foreground">
-            Create and manage CHRMS accounts. Roles are fixed (Administrator, Housing Officer).
+            {localIdentity
+              ? "Create and manage CHRMS accounts. Roles are fixed (Administrator, Housing Officer)."
+              : "Directory of CHRMS profiles. Create accounts and assign roles in Chiro Auth."}
           </p>
         </div>
-        <Dialog open={addOpen} onOpenChange={setAddOpen}>
-          <DialogTrigger asChild>
-            <Button>
-              <UserPlus className="mr-2 h-4 w-4" />
-              Add user
-            </Button>
-          </DialogTrigger>
-          <DialogContent className="max-w-md">
-            <DialogHeader>
-              <DialogTitle>Add user</DialogTitle>
-              <DialogDescription>
-                New users sign in with email and the password you set here.
-              </DialogDescription>
-            </DialogHeader>
-            <form onSubmit={submitCreate} className="space-y-4">
-              <div>
-                <Label>Full name</Label>
-                <Input
-                  value={createForm.fullName}
-                  onChange={(e) =>
-                    setCreateForm((f) => ({ ...f, fullName: e.target.value }))
-                  }
-                  required
-                />
-              </div>
-              <div>
-                <Label>Email</Label>
-                <Input
-                  type="email"
-                  value={createForm.email}
-                  onChange={(e) =>
-                    setCreateForm((f) => ({ ...f, email: e.target.value }))
-                  }
-                  required
-                />
-              </div>
-              <div>
-                <Label>Password</Label>
-                <Input
-                  type="password"
-                  autoComplete="new-password"
-                  value={createForm.password}
-                  onChange={(e) =>
-                    setCreateForm((f) => ({ ...f, password: e.target.value }))
-                  }
-                  placeholder="Minimum 8 characters"
-                  required
-                  minLength={8}
-                />
-              </div>
-              <div>
-                <Label>Role</Label>
-                <Select
-                  value={createForm.role}
-                  onValueChange={(v) =>
-                    setCreateForm((f) => ({
-                      ...f,
-                      role: v as ChrmsUser["role"],
-                    }))
-                  }
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="HOUSING_OFFICER">Housing Officer</SelectItem>
-                    <SelectItem value="ADMIN">Administrator</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="flex justify-end gap-2">
-                <Button type="button" variant="outline" onClick={() => setAddOpen(false)}>
-                  Cancel
-                </Button>
-                <Button type="submit" disabled={createMutation.isPending}>
-                  {createMutation.isPending ? "Saving…" : "Create user"}
-                </Button>
-              </div>
-            </form>
-          </DialogContent>
-        </Dialog>
+        {localIdentity ? (
+          <Dialog open={addOpen} onOpenChange={setAddOpen}>
+            <DialogTrigger asChild>
+              <Button>
+                <UserPlus className="mr-2 h-4 w-4" />
+                Add user
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="max-w-md">
+              <DialogHeader>
+                <DialogTitle>Add user</DialogTitle>
+                <DialogDescription>
+                  New users sign in with email and the password you set here.
+                </DialogDescription>
+              </DialogHeader>
+              <form onSubmit={submitCreate} className="space-y-4">
+                <div>
+                  <Label>Full name</Label>
+                  <Input
+                    value={createForm.fullName}
+                    onChange={(e) =>
+                      setCreateForm((f) => ({ ...f, fullName: e.target.value }))
+                    }
+                    required
+                  />
+                </div>
+                <div>
+                  <Label>Email</Label>
+                  <Input
+                    type="email"
+                    value={createForm.email}
+                    onChange={(e) =>
+                      setCreateForm((f) => ({ ...f, email: e.target.value }))
+                    }
+                    required
+                  />
+                </div>
+                <div>
+                  <Label>Password</Label>
+                  <Input
+                    type="password"
+                    autoComplete="new-password"
+                    value={createForm.password}
+                    onChange={(e) =>
+                      setCreateForm((f) => ({ ...f, password: e.target.value }))
+                    }
+                    placeholder="Minimum 8 characters"
+                    required
+                    minLength={8}
+                  />
+                </div>
+                <div>
+                  <Label>Role</Label>
+                  <Select
+                    value={createForm.role}
+                    onValueChange={(v) =>
+                      setCreateForm((f) => ({
+                        ...f,
+                        role: v as ChrmsUser["role"],
+                      }))
+                    }
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="HOUSING_OFFICER">Housing Officer</SelectItem>
+                      <SelectItem value="ADMIN">Administrator</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="flex justify-end gap-2">
+                  <Button type="button" variant="outline" onClick={() => setAddOpen(false)}>
+                    Cancel
+                  </Button>
+                  <Button type="submit" disabled={createMutation.isPending}>
+                    {createMutation.isPending ? "Saving…" : "Create user"}
+                  </Button>
+                </div>
+              </form>
+            </DialogContent>
+          </Dialog>
+        ) : (
+          <Button asChild variant="outline">
+            <a
+              href="https://auth.chirocity.gov.et"
+              target="_blank"
+              rel="noreferrer"
+            >
+              <Shield className="mr-2 h-4 w-4" />
+              Open Chiro Auth
+            </a>
+          </Button>
+        )}
       </div>
+
+      {!localIdentity ? (
+        <Card>
+          <CardContent className="pt-6 text-sm text-muted-foreground">
+            AUTH_MODE is keycloak, so passwords, email, roles, create, and delete are managed in{" "}
+            <a
+              className="underline underline-offset-2 text-foreground"
+              href="https://auth.chirocity.gov.et"
+              target="_blank"
+              rel="noreferrer"
+            >
+              Chiro Auth
+            </a>
+            . Assign client roles <code className="text-xs">ADMIN</code> or{" "}
+            <code className="text-xs">HOUSING_OFFICER</code> on <code className="text-xs">chrms-api</code>.
+            Profiles appear here after the first successful sign-in.
+          </CardContent>
+        </Card>
+      ) : null}
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <Card>
@@ -519,16 +576,18 @@ export default function UsersPage() {
                               <DropdownMenuContent align="end">
                                 <DropdownMenuItem onClick={() => openEdit(u)}>
                                   <Edit className="mr-2 h-4 w-4" />
-                                  Edit
+                                  {localIdentity ? "Edit" : "Edit display name"}
                                 </DropdownMenuItem>
-                                <DropdownMenuItem
-                                  className="text-destructive focus:text-destructive"
-                                  disabled={u.id === currentUser?.id}
-                                  onClick={() => setDeleteTarget(u)}
-                                >
-                                  <Trash2 className="mr-2 h-4 w-4" />
-                                  Delete
-                                </DropdownMenuItem>
+                                {localIdentity ? (
+                                  <DropdownMenuItem
+                                    className="text-destructive focus:text-destructive"
+                                    disabled={u.id === currentUser?.id}
+                                    onClick={() => setDeleteTarget(u)}
+                                  >
+                                    <Trash2 className="mr-2 h-4 w-4" />
+                                    Delete
+                                  </DropdownMenuItem>
+                                ) : null}
                               </DropdownMenuContent>
                             </DropdownMenu>
                           </TableCell>
@@ -609,7 +668,11 @@ export default function UsersPage() {
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle>Edit user</DialogTitle>
-            <DialogDescription>Update profile, role, or set a new password.</DialogDescription>
+            <DialogDescription>
+              {localIdentity
+                ? "Update profile, role, or set a new password."
+                : "Update the display name stored in CHRMS. Email, role, and password are managed in Chiro Auth."}
+            </DialogDescription>
           </DialogHeader>
           <form onSubmit={submitEdit} className="space-y-4">
             <div>
@@ -622,46 +685,55 @@ export default function UsersPage() {
                 required
               />
             </div>
-            <div>
-              <Label>Email</Label>
-              <Input
-                type="email"
-                value={editForm.email}
-                onChange={(e) =>
-                  setEditForm((f) => ({ ...f, email: e.target.value }))
-                }
-                required
-              />
-            </div>
-            <div>
-              <Label>New password</Label>
-              <Input
-                type="password"
-                autoComplete="new-password"
-                value={editForm.password}
-                onChange={(e) =>
-                  setEditForm((f) => ({ ...f, password: e.target.value }))
-                }
-                placeholder="Leave blank to keep current password"
-              />
-            </div>
-            <div>
-              <Label>Role</Label>
-              <Select
-                value={editForm.role}
-                onValueChange={(v) =>
-                  setEditForm((f) => ({ ...f, role: v as ChrmsUser["role"] }))
-                }
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="HOUSING_OFFICER">Housing Officer</SelectItem>
-                  <SelectItem value="ADMIN">Administrator</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
+            {localIdentity ? (
+              <>
+                <div>
+                  <Label>Email</Label>
+                  <Input
+                    type="email"
+                    value={editForm.email}
+                    onChange={(e) =>
+                      setEditForm((f) => ({ ...f, email: e.target.value }))
+                    }
+                    required
+                  />
+                </div>
+                <div>
+                  <Label>New password</Label>
+                  <Input
+                    type="password"
+                    autoComplete="new-password"
+                    value={editForm.password}
+                    onChange={(e) =>
+                      setEditForm((f) => ({ ...f, password: e.target.value }))
+                    }
+                    placeholder="Leave blank to keep current password"
+                  />
+                </div>
+                <div>
+                  <Label>Role</Label>
+                  <Select
+                    value={editForm.role}
+                    onValueChange={(v) =>
+                      setEditForm((f) => ({ ...f, role: v as ChrmsUser["role"] }))
+                    }
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="HOUSING_OFFICER">Housing Officer</SelectItem>
+                      <SelectItem value="ADMIN">Administrator</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </>
+            ) : (
+              <div>
+                <Label>Email</Label>
+                <Input type="email" value={editForm.email} disabled />
+              </div>
+            )}
             <div className="flex justify-end gap-2">
               <Button
                 type="button"

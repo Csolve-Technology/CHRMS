@@ -123,7 +123,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
   const logout = () => { clear(); void signOut().catch(() => endSession()); };
   const hasPermission = (permission: string) => !!user && (user.permissions.includes("*") || user.permissions.includes(permission));
-  if (!ready) return <div className="min-h-screen flex items-center justify-center">Loading CHRMS?</div>;
+  if (!ready) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center gap-3 bg-background">
+        <img
+          src="/logo-chiro-192.png"
+          alt="Chiro City Administration"
+          width={72}
+          height={72}
+          className="rounded-full object-contain"
+        />
+        <p className="text-sm text-muted-foreground">Loading CHRMS…</p>
+      </div>
+    );
+  }
   return <AuthContext.Provider value={{ user, token, login, loginWithSSO, logout, authMode, isAuthenticated: !!user && !!token, hasPermission, isLoading, lastError }}>{children}</AuthContext.Provider>;
 };
 

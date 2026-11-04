@@ -57,22 +57,36 @@ export class SalesService {
   async findOne(id: string) {
     const s = await this.prisma.sale.findUnique({
       where: { id },
-      include: { buyer: true, property: true, payments: { orderBy: { paidAt: 'desc' } } },
+      include: {
+        buyer: true,
+        property: true,
+        payments: { orderBy: [{ paidAt: 'desc' }, { createdAt: 'desc' }] },
+      },
     });
     if (!s) throw new NotFoundException('Sale not found');
     const m = saleTotals(s.totalPrice, s.payments);
+    const downPayment = Number(s.downPayment);
+    const installmentsPaid = Math.max(
+      0,
+      Math.round((m.totalPaid - Math.min(m.totalPaid, downPayment)) * 100) / 100,
+    );
     return {
       id: s.id,
       status: s.status,
       startDate: s.startDate,
       durationMonths: s.durationMonths,
-      downPayment: Number(s.downPayment),
+      downPayment,
       property: s.property,
       buyer: s.buyer,
-      payments: s.payments,
+      payments: s.payments.map((p) => ({
+        ...p,
+        amount: Number(p.amount),
+      })),
       totalPrice: m.totalPrice,
       totalPaid: m.totalPaid,
+      installmentsPaid,
       remaining: m.remaining,
+      outstandingBalance: m.remaining,
       completionPercentage: m.completionPercentage,
       isCompleted: m.isCompleted,
     };
@@ -95,6 +109,7 @@ export class SalesService {
     if (!buyer) throw new NotFoundException('Buyer (tenant record) not found');
 
     return this.prisma.$transaction(async (tx) => {
+      const startDate = new Date(dto.startDate);
       const sale = await tx.sale.create({
         data: {
           propertyId: dto.propertyId,
@@ -102,10 +117,20 @@ export class SalesService {
           totalPrice: dto.totalPrice,
           downPayment: dto.downPayment,
           durationMonths: dto.durationMonths,
-          startDate: new Date(dto.startDate),
+          startDate,
           status: 'active',
         },
       });
+      if (dto.downPayment > 0) {
+        await tx.salePayment.create({
+          data: {
+            saleId: sale.id,
+            amount: dto.downPayment,
+            paidAt: startDate,
+            method: 'bank',
+          },
+        });
+      }
       await tx.property.update({
         where: { id: dto.propertyId },
         data: { status: PropertyStatus.sold },
