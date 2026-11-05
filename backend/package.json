@@ -22,6 +22,7 @@
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "prisma:seed": "prisma db seed",
+    "test:bootstrap": "node --test scripts/bootstrap-admin.test.cjs",
     "test:auth": "jest --runInBand keycloak-auth.spec.ts role-management.spec.ts"
   },
   "prisma": {

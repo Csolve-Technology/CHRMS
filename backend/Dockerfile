@@ -5,7 +5,7 @@ COPY package*.json ./
 COPY prisma ./prisma
 RUN npm ci
 COPY . .
-RUN npx prisma generate && npm run test:auth && npm run build
+RUN npx prisma generate && npm run test:auth && npm run test:bootstrap && npm run build
 RUN npm prune --omit=dev --ignore-scripts
 
 FROM node:22-bookworm-slim

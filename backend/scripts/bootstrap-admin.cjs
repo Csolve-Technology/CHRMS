@@ -2,7 +2,7 @@ const { PrismaClient } = require('@prisma/client');
 const bcrypt = require('bcrypt');
 const prisma = new PrismaClient();
 async function main() {
-  if (await prisma.user.findFirst({ where: { role: 'ADMIN', roleNames: ['ADMIN'] } })) return;
+  if (await prisma.user.findFirst({ where: { isActive: true, roleNames: { has: 'ADMIN' } } })) return;
   const email = process.env.ADMIN_EMAIL;
   const password = process.env.ADMIN_PASSWORD;
   if (!email || !password || password.length < 16) throw new Error('Set ADMIN_EMAIL and ADMIN_PASSWORD (at least 16 characters)');
