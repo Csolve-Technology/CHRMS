@@ -6,11 +6,13 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { Prisma, UserRole } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { rolePermissions } from './role-access';
 import { authConfig } from './auth.config';
 
 export type KeycloakPayload = {
   sub?: string;
   exp?: number;
+  iat?: number;
   typ?: string;
   azp?: string;
   email?: string;
@@ -33,6 +35,7 @@ export class KeycloakUserService {
       typeof payload.sub !== 'string' ||
       !payload.sub ||
       !Number.isFinite(payload.exp) ||
+      !Number.isFinite(payload.iat) ||
       payload.typ !== 'Bearer' ||
       payload.azp !== settings.clientId
     ) {
@@ -41,15 +44,16 @@ export class KeycloakUserService {
     const roles = payload.resource_access?.[settings.audience]?.roles ?? [];
     if (!Array.isArray(roles))
       throw new UnauthorizedException('Invalid role claims.');
-    const role = roles.includes(UserRole.ADMIN)
-      ? UserRole.ADMIN
-      : roles.includes(UserRole.HOUSING_OFFICER)
-        ? UserRole.HOUSING_OFFICER
-        : null;
-    if (!role)
+    if (!roles.every((role) => typeof role === 'string'))
+      throw new UnauthorizedException('Invalid role claims.');
+    const access = await rolePermissions(this.prisma, roles);
+    if (!access.names.length)
       throw new ForbiddenException(
         'Your account has not been granted access to CHRMS.',
       );
+    const role = access.names.includes('ADMIN')
+      ? UserRole.ADMIN
+      : UserRole.HOUSING_OFFICER;
     if (
       typeof payload.email !== 'string' ||
       !payload.email ||
@@ -62,6 +66,12 @@ export class KeycloakUserService {
     const existing = await this.prisma.user.findUnique({
       where: { keycloakSub: payload.sub },
     });
+    if (existing && !existing.isActive)
+      throw new ForbiddenException('This CHRMS account is disabled.');
+    if (existing && Number(existing.rolesValidAfter ?? 0) > (payload.iat ?? 0))
+      throw new UnauthorizedException(
+        'Your CHRMS roles changed. Sign out and sign in again.',
+      );
     if (existing && existing.keycloakIssuer !== settings.issuer) {
       throw new ForbiddenException(
         'This CHRMS account is linked to another identity provider.',
@@ -86,19 +96,33 @@ export class KeycloakUserService {
         ? payload.preferred_username
         : undefined;
     try {
-      const user = await this.prisma.user.upsert({
-        where: { keycloakSub: payload.sub },
-        create: {
-          keycloakSub: payload.sub,
-          keycloakIssuer: settings.issuer,
-          email: payload.email.toLowerCase(),
-          passwordHash: null,
-          fullName: name || username || payload.email,
-          role,
-        },
-        update: { role, ...(name ? { fullName: name } : {}) },
-      });
-      return { sub: user.id, email: user.email, fullName: user.fullName, role };
+      const unchanged =
+        existing &&
+        JSON.stringify([...(existing.roleNames ?? [])].sort()) ===
+          JSON.stringify([...access.names].sort());
+      const user = unchanged
+        ? existing
+        : await this.prisma.user.upsert({
+            where: { keycloakSub: payload.sub },
+            create: {
+              keycloakSub: payload.sub,
+              keycloakIssuer: settings.issuer,
+              email: payload.email.toLowerCase(),
+              passwordHash: null,
+              fullName: name || username || payload.email,
+              role,
+              roleNames: access.names,
+            },
+            update: { role, roleNames: access.names },
+          });
+      return {
+        sub: user.id,
+        email: user.email,
+        fullName: user.fullName,
+        role: access.names[0],
+        roles: access.names,
+        permissions: access.permissions,
+      };
     } catch (error) {
       if (
         error instanceof Prisma.PrismaClientKnownRequestError &&

@@ -1,3 +1,4 @@
+import { useAuth } from "@/contexts/AuthContext";
 import React, { useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -93,6 +94,7 @@ function methodLabel(method: string) {
 }
 
 export default function SaleDetailPage() {
+  const { hasPermission } = useAuth();
   const { id } = useParams<{ id: string }>();
   const qc = useQueryClient();
   const [open, setOpen] = useState(false);
@@ -242,8 +244,8 @@ export default function SaleDetailPage() {
               </Link>
             </p>
             <p>
-              Woreda/City {data.property.woreda}, Kebele {data.property.kebele}, #
-              {data.property.houseNumber}
+              Woreda/City {data.property.woreda}, Kebele {data.property.kebele},
+              #{data.property.houseNumber}
             </p>
           </CardContent>
         </Card>
@@ -294,7 +296,10 @@ export default function SaleDetailPage() {
               }}
             >
               <DialogTrigger asChild>
-                <Button size="sm">
+                <Button
+                  disabled={!hasPermission("sale_payments.write")}
+                  size="sm"
+                >
                   <Plus className="h-4 w-4 mr-1" />
                   Record payment
                 </Button>
@@ -370,7 +375,9 @@ export default function SaleDetailPage() {
         </CardHeader>
         <CardContent>
           {data.payments.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No payments recorded</p>
+            <p className="text-sm text-muted-foreground">
+              No payments recorded
+            </p>
           ) : (
             <div className="rounded-md border">
               <Table>

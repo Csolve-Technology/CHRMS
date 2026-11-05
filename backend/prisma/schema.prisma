@@ -32,7 +32,17 @@ enum PropertyStatus {
   maintenance
 }
 
+model Role {
+  name String @id
+  permissions String[] @default([])
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
 model User {
+  roleNames String[] @default([])
+  isActive Boolean @default(true)
+  rolesValidAfter BigInt @default(0)
   id           String   @id @default(uuid())
   email        String   @unique
   passwordHash String?  @map("password_hash")

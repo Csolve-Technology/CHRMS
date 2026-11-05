@@ -1,3 +1,4 @@
+import { useAuth } from "@/contexts/AuthContext";
 import React, { useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
@@ -218,6 +219,7 @@ function estimateLeaseMonths(startDate: string, endDate: string): number {
 }
 
 export default function RentalsPage() {
+  const { hasPermission } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
   const tab = searchParams.get("tab") === "sales" ? "sales" : "rentals";
   const setTab = (value: string) => {
@@ -345,7 +347,10 @@ export default function RentalsPage() {
       refetchProperties();
     } catch (err) {
       toast({
-        title: txType === "rent" ? "Failed to create rental" : "Failed to create sale",
+        title:
+          txType === "rent"
+            ? "Failed to create rental"
+            : "Failed to create sale",
         description: getApiErrorMessage(err),
         variant: "destructive",
       });
@@ -426,7 +431,7 @@ export default function RentalsPage() {
           }}
         >
           <DialogTrigger asChild>
-            <Button>
+            <Button disabled={!hasPermission("rentals.write")}>
               <Plus className="h-4 w-4 mr-1" />
               Add record
             </Button>
@@ -503,7 +508,8 @@ export default function RentalsPage() {
                     </Select>
                   </div>
                   <div className="col-span-2 rounded-md border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
-                    Agreement number is generated automatically (e.g. RA-2026-0001).
+                    Agreement number is generated automatically (e.g.
+                    RA-2026-0001).
                   </div>
                   <div className="col-span-2">
                     <Label>Agreement file</Label>
@@ -521,7 +527,10 @@ export default function RentalsPage() {
                       type="date"
                       value={rentForm.startDate}
                       onChange={(e) =>
-                        setRentForm((f) => ({ ...f, startDate: e.target.value }))
+                        setRentForm((f) => ({
+                          ...f,
+                          startDate: e.target.value,
+                        }))
                       }
                       required
                     />
@@ -699,7 +708,11 @@ export default function RentalsPage() {
                 </div>
               )}
 
-              <Button type="submit" className="w-full">
+              <Button
+                type="submit"
+                disabled={!hasPermission("rentals.write")}
+                className="w-full"
+              >
                 {txType === "rent" ? "Create rental" : "Create sale"}
               </Button>
             </form>
@@ -757,13 +770,19 @@ export default function RentalsPage() {
                       <TableBody>
                         {rentLoading ? (
                           <TableRow>
-                            <TableCell colSpan={11} className="text-center py-10">
+                            <TableCell
+                              colSpan={11}
+                              className="text-center py-10"
+                            >
                               Loading…
                             </TableCell>
                           </TableRow>
                         ) : rows.length === 0 ? (
                           <TableRow>
-                            <TableCell colSpan={11} className="text-center py-10">
+                            <TableCell
+                              colSpan={11}
+                              className="text-center py-10"
+                            >
                               No rentals yet
                             </TableCell>
                           </TableRow>
@@ -849,27 +868,31 @@ export default function RentalsPage() {
                                         View
                                       </Link>
                                     </DropdownMenuItem>
-                                    <DropdownMenuItem
-                                      onSelect={(e) => {
-                                        e.preventDefault();
-                                        startEdit(r);
-                                      }}
-                                    >
-                                      <Pencil className="mr-2 h-4 w-4" />
-                                      Edit
-                                    </DropdownMenuItem>
+                                    {hasPermission("rentals.write") && (
+                                      <DropdownMenuItem
+                                        onSelect={(e) => {
+                                          e.preventDefault();
+                                          startEdit(r);
+                                        }}
+                                      >
+                                        <Pencil className="mr-2 h-4 w-4" />
+                                        Edit
+                                      </DropdownMenuItem>
+                                    )}
                                     <DropdownMenuSeparator />
-                                    <DropdownMenuItem
-                                      className="text-destructive focus:text-destructive"
-                                      disabled={deletingId === r.id}
-                                      onSelect={(e) => {
-                                        e.preventDefault();
-                                        setDeleteTarget(r);
-                                      }}
-                                    >
-                                      <Trash2 className="mr-2 h-4 w-4" />
-                                      Delete
-                                    </DropdownMenuItem>
+                                    {hasPermission("rentals.write") && (
+                                      <DropdownMenuItem
+                                        className="text-destructive focus:text-destructive"
+                                        disabled={deletingId === r.id}
+                                        onSelect={(e) => {
+                                          e.preventDefault();
+                                          setDeleteTarget(r);
+                                        }}
+                                      >
+                                        <Trash2 className="mr-2 h-4 w-4" />
+                                        Delete
+                                      </DropdownMenuItem>
+                                    )}
                                   </DropdownMenuContent>
                                 </DropdownMenu>
                               </TableCell>
@@ -919,8 +942,12 @@ export default function RentalsPage() {
                           <TableHead>Term</TableHead>
                           <TableHead className="text-right">Total</TableHead>
                           <TableHead className="text-right">Paid</TableHead>
-                          <TableHead className="text-right">Remaining</TableHead>
-                          <TableHead className="min-w-[140px]">Progress</TableHead>
+                          <TableHead className="text-right">
+                            Remaining
+                          </TableHead>
+                          <TableHead className="min-w-[140px]">
+                            Progress
+                          </TableHead>
                           <TableHead>Status</TableHead>
                           <TableHead className="text-right">Actions</TableHead>
                         </TableRow>
@@ -928,13 +955,19 @@ export default function RentalsPage() {
                       <TableBody>
                         {saleLoading ? (
                           <TableRow>
-                            <TableCell colSpan={10} className="text-center py-10">
+                            <TableCell
+                              colSpan={10}
+                              className="text-center py-10"
+                            >
                               Loading…
                             </TableCell>
                           </TableRow>
                         ) : sales.length === 0 ? (
                           <TableRow>
-                            <TableCell colSpan={10} className="text-center py-10">
+                            <TableCell
+                              colSpan={10}
+                              className="text-center py-10"
+                            >
                               No sales yet
                             </TableCell>
                           </TableRow>
@@ -1103,17 +1136,19 @@ export default function RentalsPage() {
               <Label>Status</Label>
               <Select
                 value={rentForm.status}
-                onValueChange={(v) =>
-                  setRentForm((f) => ({ ...f, status: v }))
-                }
+                onValueChange={(v) => setRentForm((f) => ({ ...f, status: v }))}
               >
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="active">Active — ongoing lease</SelectItem>
-                  <SelectItem value="completed">Completed — lease ended</SelectItem>
-                  <SelectItem value="cancelled">Cancelled — voided early</SelectItem>
+                  <SelectItem value="completed">
+                    Completed — lease ended
+                  </SelectItem>
+                  <SelectItem value="cancelled">
+                    Cancelled — voided early
+                  </SelectItem>
                 </SelectContent>
               </Select>
               <p className="text-xs text-muted-foreground mt-1">
@@ -1121,7 +1156,11 @@ export default function RentalsPage() {
               </p>
             </div>
             <div className="col-span-2">
-              <Button type="submit" className="w-full">
+              <Button
+                type="submit"
+                disabled={!hasPermission("rentals.write")}
+                className="w-full"
+              >
                 Update
               </Button>
             </div>

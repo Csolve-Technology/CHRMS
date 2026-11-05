@@ -29,17 +29,42 @@ const menuItems: {
   href: string;
   permission: string;
 }[] = [
-  { titleKey: "nav.dashboard", icon: BarChart3, href: "/dashboard", permission: "dashboard.view" },
-  { titleKey: "nav.properties", icon: Home, href: "/properties", permission: "properties.read" },
-  { titleKey: "nav.tenants", icon: Users, href: "/tenants", permission: "tenants.read" },
+  {
+    titleKey: "nav.dashboard",
+    icon: BarChart3,
+    href: "/dashboard",
+    permission: "dashboard.view",
+  },
+  {
+    titleKey: "nav.properties",
+    icon: Home,
+    href: "/properties",
+    permission: "properties.read",
+  },
+  {
+    titleKey: "nav.tenants",
+    icon: Users,
+    href: "/tenants",
+    permission: "tenants.read",
+  },
   {
     titleKey: "nav.rentals",
     icon: FileText,
     href: "/rentals",
     permission: "rentals.read",
   },
-  { titleKey: "nav.payments", icon: CreditCard, href: "/payments", permission: "payments.read" },
-  { titleKey: "nav.reports", icon: BarChart3, href: "/reports", permission: "reports.view" },
+  {
+    titleKey: "nav.payments",
+    icon: CreditCard,
+    href: "/payments",
+    permission: "payments.read",
+  },
+  {
+    titleKey: "nav.reports",
+    icon: BarChart3,
+    href: "/reports",
+    permission: "reports.view",
+  },
 ];
 
 const adminItems: {
@@ -48,8 +73,18 @@ const adminItems: {
   href: string;
   permission: string;
 }[] = [
-  { titleKey: "nav.userManagement", icon: Shield, href: "/admin/users", permission: "*" },
-  { titleKey: "nav.systemSettings", icon: Settings, href: "/admin/settings", permission: "*" },
+  {
+    titleKey: "nav.userManagement",
+    icon: Shield,
+    href: "/admin/users",
+    permission: "users.read",
+  },
+  {
+    titleKey: "nav.systemSettings",
+    icon: Settings,
+    href: "/admin/settings",
+    permission: "settings.read",
+  },
 ];
 
 const Sidebar: React.FC<SidebarProps> = ({ isCollapsed }) => {
@@ -57,11 +92,15 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed }) => {
   const { t } = useI18n();
 
   const filteredMenuItems = menuItems.filter(
-    (item) => item.permission === "*" || hasPermission(item.permission)
+    (item) =>
+      hasPermission(item.permission) ||
+      (item.href === "/admin/users" && hasPermission("roles.read")),
   );
 
   const filteredAdminItems = adminItems.filter(
-    (item) => item.permission === "*" || hasPermission(item.permission)
+    (item) =>
+      hasPermission(item.permission) ||
+      (item.href === "/admin/users" && hasPermission("roles.read")),
   );
 
   return (
@@ -71,12 +110,18 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed }) => {
       } h-full flex flex-col`}
     >
       <div className="p-4 border-b border-border">
-        <div className={`flex items-center ${isCollapsed ? "justify-center" : "space-x-3"}`}>
+        <div
+          className={`flex items-center ${isCollapsed ? "justify-center" : "space-x-3"}`}
+        >
           <ChiroLogo size={isCollapsed ? 36 : 40} />
           {!isCollapsed && (
             <div className="min-w-0">
-              <h1 className="text-lg font-bold text-foreground leading-tight">{t("app.title")}</h1>
-              <p className="text-xs text-muted-foreground truncate">{t("app.subtitle")}</p>
+              <h1 className="text-lg font-bold text-foreground leading-tight">
+                {t("app.title")}
+              </h1>
+              <p className="text-xs text-muted-foreground truncate">
+                {t("app.subtitle")}
+              </p>
             </div>
           )}
         </div>
@@ -87,12 +132,19 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed }) => {
           <div className="flex items-center space-x-3">
             <div className="h-10 w-10 bg-gradient-to-r from-blue-500 to-cyan-500 rounded-full flex items-center justify-center">
               <span className="text-white font-medium text-sm">
-                {user.name.split(" ").map((n) => n[0]).join("")}
+                {user.name
+                  .split(" ")
+                  .map((n) => n[0])
+                  .join("")}
               </span>
             </div>
             <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium text-foreground truncate">{user.name}</p>
-              <p className="text-xs text-muted-foreground truncate">{user.designation}</p>
+              <p className="text-sm font-medium text-foreground truncate">
+                {user.name}
+              </p>
+              <p className="text-xs text-muted-foreground truncate">
+                {user.designation}
+              </p>
               <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-200 mt-1">
                 {user.role.replace(/_/g, " ")}
               </span>

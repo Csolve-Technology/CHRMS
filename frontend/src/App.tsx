@@ -3,7 +3,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { ThemeProvider } from "@/components/theme-provider";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
-import { AuthProvider, useAuth } from "./contexts/AuthContext";
+import { landingPath, AuthProvider, useAuth } from "./contexts/AuthContext";
 import { I18nProvider } from "./contexts/I18nContext";
 import Layout from "./components/layout/Layout";
 
@@ -26,7 +26,7 @@ import NotFound from "./pages/NotFound";
 const queryClient = new QueryClient();
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
-  const { isAuthenticated, isLoading } = useAuth();
+  const { isAuthenticated, isLoading, user } = useAuth();
 
   if (isLoading) {
     return (
@@ -36,15 +36,11 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
     );
   }
 
-  return isAuthenticated ? (
-    <>{children}</>
-  ) : (
-    <Navigate to="/login" replace />
-  );
+  return isAuthenticated ? <>{children}</> : <Navigate to="/login" replace />;
 }
 
 function PublicRoute({ children }: { children: React.ReactNode }) {
-  const { isAuthenticated, isLoading } = useAuth();
+  const { isAuthenticated, isLoading, user } = useAuth();
 
   if (isLoading) {
     return (
@@ -57,7 +53,24 @@ function PublicRoute({ children }: { children: React.ReactNode }) {
   return !isAuthenticated ? (
     <>{children}</>
   ) : (
-    <Navigate to="/dashboard" replace />
+    <Navigate to={landingPath(user)} replace />
+  );
+}
+
+function PermissionRoute({
+  permissions,
+  children,
+}: {
+  permissions: string[];
+  children: React.ReactNode;
+}) {
+  const { hasPermission } = useAuth();
+  return permissions.some(hasPermission) ? (
+    <>{children}</>
+  ) : (
+    <div className="p-8" role="alert">
+      You have not been granted access to this page. Contact your administrator.
+    </div>
   );
 }
 
@@ -88,19 +101,121 @@ function AppRoutes() {
           </ProtectedRoute>
         }
       >
-        <Route path="dashboard" element={<Dashboard />} />
-        <Route path="properties" element={<PropertiesPage />} />
-        <Route path="properties/:id" element={<PropertyDetailPage />} />
-        <Route path="tenants" element={<TenantsPage />} />
-        <Route path="tenants/:id" element={<TenantDetailPage />} />
-        <Route path="rentals" element={<RentalsPage />} />
-        <Route path="rentals/:id" element={<RentalDetailPage />} />
-        <Route path="sales" element={<SalesPage />} />
-        <Route path="sales/:id" element={<SaleDetailPage />} />
-        <Route path="payments" element={<PaymentsPage />} />
-        <Route path="reports" element={<ReportsPage />} />
-        <Route path="admin/users" element={<UsersPage />} />
-        <Route path="admin/settings" element={<SettingsPage />} />
+        <Route
+          path="no-access"
+          element={
+            <div className="p-8">
+              Your account has no CHRMS permissions yet. Contact your
+              administrator.
+            </div>
+          }
+        />
+        <Route
+          path="dashboard"
+          element={
+            <PermissionRoute permissions={["dashboard.read"]}>
+              <Dashboard />
+            </PermissionRoute>
+          }
+        />
+        <Route
+          path="properties"
+          element={
+            <PermissionRoute permissions={["properties.read"]}>
+              <PropertiesPage />
+            </PermissionRoute>
+          }
+        />
+        <Route
+          path="properties/:id"
+          element={
+            <PermissionRoute permissions={["properties.read"]}>
+              <PropertyDetailPage />
+            </PermissionRoute>
+          }
+        />
+        <Route
+          path="tenants"
+          element={
+            <PermissionRoute permissions={["tenants.read"]}>
+              <TenantsPage />
+            </PermissionRoute>
+          }
+        />
+        <Route
+          path="tenants/:id"
+          element={
+            <PermissionRoute permissions={["tenants.read"]}>
+              <TenantDetailPage />
+            </PermissionRoute>
+          }
+        />
+        <Route
+          path="rentals"
+          element={
+            <PermissionRoute permissions={["rentals.read"]}>
+              <RentalsPage />
+            </PermissionRoute>
+          }
+        />
+        <Route
+          path="rentals/:id"
+          element={
+            <PermissionRoute permissions={["rentals.read"]}>
+              <RentalDetailPage />
+            </PermissionRoute>
+          }
+        />
+        <Route
+          path="sales"
+          element={
+            <PermissionRoute permissions={["sales.read"]}>
+              <SalesPage />
+            </PermissionRoute>
+          }
+        />
+        <Route
+          path="sales/:id"
+          element={
+            <PermissionRoute permissions={["sales.read"]}>
+              <SaleDetailPage />
+            </PermissionRoute>
+          }
+        />
+        <Route
+          path="payments"
+          element={
+            <PermissionRoute
+              permissions={["rental_payments.read", "sale_payments.read"]}
+            >
+              <PaymentsPage />
+            </PermissionRoute>
+          }
+        />
+        <Route
+          path="reports"
+          element={
+            <PermissionRoute permissions={["reports.read"]}>
+              <ReportsPage />
+            </PermissionRoute>
+          }
+        />
+        <Route
+          path="admin/users"
+          element={
+            <PermissionRoute permissions={["users.read", "roles.read"]}>
+              <UsersPage />
+            </PermissionRoute>
+          }
+        />
+        <Route
+          path="admin/settings"
+          element={
+            <PermissionRoute permissions={["settings.read"]}>
+              <SettingsPage />
+            </PermissionRoute>
+          }
+        />
       </Route>
       <Route path="*" element={<NotFound />} />
     </Routes>

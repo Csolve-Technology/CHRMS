@@ -26,6 +26,8 @@ services:
       KEYCLOAK_REALM: ${KEYCLOAK_REALM:-chirocity}
       KEYCLOAK_CLIENT_ID: ${KEYCLOAK_CLIENT_ID:-chrms-web}
       KEYCLOAK_AUDIENCE: ${KEYCLOAK_AUDIENCE:-chrms-api}
+      KEYCLOAK_ADMIN_CLIENT_ID: ${KEYCLOAK_ADMIN_CLIENT_ID:-chrms-provisioner}
+      KEYCLOAK_ADMIN_CLIENT_SECRET: ${KEYCLOAK_ADMIN_CLIENT_SECRET:-}
       NODE_ENV: production
       PORT: 3000
       DATABASE_URL: postgresql://chrms:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}@postgres:5432/chrms?schema=public

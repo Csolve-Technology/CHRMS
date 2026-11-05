@@ -1,3 +1,4 @@
+import { useAuth } from "@/contexts/AuthContext";
 import React, { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -104,6 +105,7 @@ const emptySaleForm = {
 };
 
 export default function PaymentsPage() {
+  const { hasPermission } = useAuth();
   const qc = useQueryClient();
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
@@ -133,6 +135,7 @@ export default function PaymentsPage() {
 
   const rentalQ = useQuery({
     queryKey: ["rental-payments", rentalParams],
+    enabled: hasPermission("rental_payments.read"),
     queryFn: async () => {
       const res = await api.get<Paginated<RentalPay>>(
         `/rental-payments?${rentalParams}`,
@@ -143,6 +146,7 @@ export default function PaymentsPage() {
 
   const saleQ = useQuery({
     queryKey: ["sale-payments", saleParams],
+    enabled: hasPermission("sale_payments.read"),
     queryFn: async () => {
       const res = await api.get<Paginated<SalePay>>(
         `/sale-payments?${saleParams}`,
@@ -153,7 +157,7 @@ export default function PaymentsPage() {
 
   const rentalsQ = useQuery({
     queryKey: ["rentals-for-payment"],
-    enabled: rentalOpen,
+    enabled: rentalOpen && hasPermission("rentals.read"),
     queryFn: async () => {
       const res = await api.get<Paginated<RentalOption>>(
         `/rentals?${buildPageParams({ page: 1, pageSize: 100 })}`,
@@ -164,7 +168,7 @@ export default function PaymentsPage() {
 
   const salesQ = useQuery({
     queryKey: ["sales-for-payment"],
-    enabled: saleOpen,
+    enabled: saleOpen && hasPermission("sales.read"),
     queryFn: async () => {
       const res = await api.get<Paginated<SaleOption>>(
         `/sales?${buildPageParams({ page: 1, pageSize: 100 })}`,
@@ -275,10 +279,22 @@ export default function PaymentsPage() {
         </CardContent>
       </Card>
 
-      <Tabs defaultValue="rental">
+      <Tabs
+        defaultValue={hasPermission("rental_payments.read") ? "rental" : "sale"}
+      >
         <TabsList>
-          <TabsTrigger value="rental">Rental payments</TabsTrigger>
-          <TabsTrigger value="sale">Sale payments</TabsTrigger>
+          <TabsTrigger
+            disabled={!hasPermission("rental_payments.read")}
+            value="rental"
+          >
+            Rental payments
+          </TabsTrigger>
+          <TabsTrigger
+            disabled={!hasPermission("sale_payments.read")}
+            value="sale"
+          >
+            Sale payments
+          </TabsTrigger>
         </TabsList>
         <TabsContent value="rental">
           <Card>
@@ -292,7 +308,13 @@ export default function PaymentsPage() {
                 }}
               >
                 <DialogTrigger asChild>
-                  <Button size="sm">
+                  <Button
+                    size="sm"
+                    disabled={
+                      !hasPermission("rental_payments.write") ||
+                      !hasPermission("rentals.read")
+                    }
+                  >
                     <Plus className="h-4 w-4 mr-1" />
                     Record payment
                   </Button>
@@ -323,9 +345,7 @@ export default function PaymentsPage() {
                             ...f,
                             rentalId: v,
                             amount:
-                              suggested != null
-                                ? String(suggested)
-                                : f.amount,
+                              suggested != null ? String(suggested) : f.amount,
                           }));
                         }}
                       >
@@ -466,18 +486,26 @@ export default function PaymentsPage() {
                               </TableCell>
                               <TableCell>
                                 {p.kind === "deposit" ? (
-                                  <Badge variant="outline" className="font-normal">
+                                  <Badge
+                                    variant="outline"
+                                    className="font-normal"
+                                  >
                                     Deposit
                                   </Badge>
                                 ) : (
-                                  <Badge variant="secondary" className="font-normal">
+                                  <Badge
+                                    variant="secondary"
+                                    className="font-normal"
+                                  >
                                     Rent
                                   </Badge>
                                 )}
                               </TableCell>
                               <TableCell>
                                 {p.kind === "deposit" ? (
-                                  <span className="text-muted-foreground">Held</span>
+                                  <span className="text-muted-foreground">
+                                    Held
+                                  </span>
                                 ) : p.monthStatus === "paid" ? (
                                   <Badge className="bg-emerald-600 hover:bg-emerald-600 font-normal">
                                     Paid
@@ -487,7 +515,10 @@ export default function PaymentsPage() {
                                     Partial
                                   </Badge>
                                 ) : (
-                                  <Badge variant="secondary" className="font-normal">
+                                  <Badge
+                                    variant="secondary"
+                                    className="font-normal"
+                                  >
                                     {formatMonthRentStatus(p.monthStatus)}
                                   </Badge>
                                 )}
@@ -496,7 +527,10 @@ export default function PaymentsPage() {
                                 {p.kind === "deposit" ? (
                                   "—"
                                 ) : (
-                                  <>ETB {Number(p.balanceDue ?? 0).toLocaleString()}</>
+                                  <>
+                                    ETB{" "}
+                                    {Number(p.balanceDue ?? 0).toLocaleString()}
+                                  </>
                                 )}
                               </TableCell>
                               <TableCell>
@@ -535,7 +569,13 @@ export default function PaymentsPage() {
                 }}
               >
                 <DialogTrigger asChild>
-                  <Button size="sm">
+                  <Button
+                    size="sm"
+                    disabled={
+                      !hasPermission("sale_payments.write") ||
+                      !hasPermission("sales.read")
+                    }
+                  >
                     <Plus className="h-4 w-4 mr-1" />
                     Record payment
                   </Button>

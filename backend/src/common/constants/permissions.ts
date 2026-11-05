@@ -2,6 +2,10 @@ import { UserRole } from '@prisma/client';
 
 /** Fine-grained permissions; roles map to these for guards */
 export enum Permission {
+  ROLES_READ = 'roles.read',
+  ROLES_WRITE = 'roles.write',
+  SETTINGS_READ = 'settings.read',
+  SETTINGS_WRITE = 'settings.write',
   PROFILE_READ = 'profile.read',
   DASHBOARD_READ = 'dashboard.read',
   PROPERTIES_READ = 'properties.read',
@@ -44,5 +48,6 @@ const ALL_PERMISSIONS = Object.values(Permission);
 
 export function permissionsForRole(role: UserRole): Permission[] {
   if (role === UserRole.ADMIN) return ALL_PERMISSIONS;
-  return HOUSING_OFFICER_PERMISSIONS;
+  if (role === UserRole.HOUSING_OFFICER) return HOUSING_OFFICER_PERMISSIONS;
+  return [];
 }

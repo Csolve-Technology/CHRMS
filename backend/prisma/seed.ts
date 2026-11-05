@@ -20,6 +20,7 @@ async function main() {
       passwordHash,
       fullName: 'System Administrator',
       role: UserRole.ADMIN,
+      roleNames: [UserRole.ADMIN],
     },
   });
 
@@ -31,6 +32,7 @@ async function main() {
       passwordHash,
       fullName: 'Housing Officer',
       role: UserRole.HOUSING_OFFICER,
+      roleNames: [UserRole.HOUSING_OFFICER],
     },
   });
 

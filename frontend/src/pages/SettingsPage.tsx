@@ -1,3 +1,4 @@
+import { useAuth } from "@/contexts/AuthContext";
 import React, { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -67,6 +68,7 @@ const mockSettings = {
 };
 
 export default function SettingsPage() {
+  const { hasPermission } = useAuth();
   const qc = useQueryClient();
   const [activeTab, setActiveTab] = useState("housing");
   const [isDirty, setIsDirty] = useState(false);
@@ -272,7 +274,11 @@ export default function SettingsPage() {
               </p>
               <Button
                 onClick={() => saveHousing.mutate()}
-                disabled={saveHousing.isPending || settingsQ.isLoading}
+                disabled={
+                  !hasPermission("settings.write") ||
+                  saveHousing.isPending ||
+                  settingsQ.isLoading
+                }
               >
                 <Save className="mr-2 h-4 w-4" />
                 {saveHousing.isPending ? "Saving…" : "Save housing settings"}

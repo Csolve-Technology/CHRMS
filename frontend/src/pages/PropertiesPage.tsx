@@ -1,3 +1,4 @@
+import { useAuth } from "@/contexts/AuthContext";
 import React, { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
@@ -35,7 +36,14 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { api, getApiErrorMessage } from "@/services/api";
-import { Search, Home, Eye, Pencil, Trash2, MoreHorizontal } from "lucide-react";
+import {
+  Search,
+  Home,
+  Eye,
+  Pencil,
+  Trash2,
+  MoreHorizontal,
+} from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -61,6 +69,7 @@ type PropertyRow = {
 };
 
 export default function PropertiesPage() {
+  const { hasPermission } = useAuth();
   const [q, setQ] = useState("");
   const [debouncedQ, setDebouncedQ] = useState("");
   const [status, setStatus] = useState<string>("all");
@@ -136,8 +145,7 @@ export default function PropertiesPage() {
         woreda: form.woreda,
         kebele: form.kebele,
         houseNumber: form.houseNumber,
-        rooms:
-          form.type === "residential" ? Number(form.rooms) : undefined,
+        rooms: form.type === "residential" ? Number(form.rooms) : undefined,
         area: Number(form.area),
         latitude: form.latitude ? Number(form.latitude) : undefined,
         longitude: form.longitude ? Number(form.longitude) : undefined,
@@ -197,7 +205,9 @@ export default function PropertiesPage() {
         </div>
         <Dialog open={open} onOpenChange={setOpen}>
           <DialogTrigger asChild>
-            <Button>Add property</Button>
+            <Button disabled={!hasPermission("properties.write")}>
+              Add property
+            </Button>
           </DialogTrigger>
           <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
             <DialogHeader>
@@ -339,7 +349,11 @@ export default function PropertiesPage() {
                   onChange={(c) => setForm((f) => ({ ...f, ...c }))}
                 />
               </div>
-              <Button type="submit" className="w-full">
+              <Button
+                type="submit"
+                disabled={!hasPermission("properties.write")}
+                className="w-full"
+              >
                 Save
               </Button>
             </form>
@@ -463,24 +477,28 @@ export default function PropertiesPage() {
                                 View
                               </Link>
                             </DropdownMenuItem>
-                            <DropdownMenuItem asChild>
-                              <Link to={`/properties/${row.id}?edit=1`}>
-                                <Pencil className="mr-2 h-4 w-4" />
-                                Edit
-                              </Link>
-                            </DropdownMenuItem>
+                            {hasPermission("properties.write") && (
+                              <DropdownMenuItem asChild>
+                                <Link to={`/properties/${row.id}?edit=1`}>
+                                  <Pencil className="mr-2 h-4 w-4" />
+                                  Edit
+                                </Link>
+                              </DropdownMenuItem>
+                            )}
                             <DropdownMenuSeparator />
-                            <DropdownMenuItem
-                              className="text-destructive focus:text-destructive"
-                              disabled={deletingId === row.id}
-                              onSelect={(e) => {
-                                e.preventDefault();
-                                setDeleteTarget(row);
-                              }}
-                            >
-                              <Trash2 className="mr-2 h-4 w-4" />
-                              Delete
-                            </DropdownMenuItem>
+                            {hasPermission("properties.write") && (
+                              <DropdownMenuItem
+                                className="text-destructive focus:text-destructive"
+                                disabled={deletingId === row.id}
+                                onSelect={(e) => {
+                                  e.preventDefault();
+                                  setDeleteTarget(row);
+                                }}
+                              >
+                                <Trash2 className="mr-2 h-4 w-4" />
+                                Delete
+                              </DropdownMenuItem>
+                            )}
                           </DropdownMenuContent>
                         </DropdownMenu>
                       </TableCell>

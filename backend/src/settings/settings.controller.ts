@@ -12,13 +12,13 @@ export class SettingsController {
   constructor(private readonly settings: SettingsService) {}
 
   @Get()
-  @RequirePermissions(Permission.DASHBOARD_READ)
+  @RequirePermissions(Permission.SETTINGS_READ)
   get() {
     return this.settings.get();
   }
 
   @Put()
-  @RequirePermissions(Permission.RENTALS_WRITE)
+  @RequirePermissions(Permission.SETTINGS_WRITE)
   update(@Body() dto: UpdateSettingsDto) {
     return this.settings.update(dto);
   }

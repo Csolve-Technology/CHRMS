@@ -1,3 +1,5 @@
+import { downloadAgreement } from "@/services/agreement-download";
+import { useAuth } from "@/contexts/AuthContext";
 import React, { useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -153,6 +155,7 @@ function etb(n: number) {
 }
 
 export default function RentalDetailPage() {
+  const { hasPermission } = useAuth();
   const { id } = useParams<{ id: string }>();
   const qc = useQueryClient();
   const [open, setOpen] = useState(false);
@@ -288,7 +291,8 @@ export default function RentalDetailPage() {
           <CardHeader className="pb-2">
             <CardDescription>Months</CardDescription>
             <CardTitle className="text-base font-semibold leading-snug">
-              {period?.monthsPaid ?? 0} paid · {period?.monthsUnpaid ?? 0} unpaid
+              {period?.monthsPaid ?? 0} paid · {period?.monthsUnpaid ?? 0}{" "}
+              unpaid
               {(period?.monthsOverdue ?? 0) > 0
                 ? ` · ${period?.monthsOverdue} overdue`
                 : ""}
@@ -313,8 +317,8 @@ export default function RentalDetailPage() {
               </Link>
             </p>
             <p>
-              Woreda/City {data.property.woreda}, Kebele {data.property.kebele}, #
-              {data.property.houseNumber}
+              Woreda/City {data.property.woreda}, Kebele {data.property.kebele},
+              #{data.property.houseNumber}
             </p>
             {data.property.type ? (
               <p className="capitalize">
@@ -363,14 +367,21 @@ export default function RentalDetailPage() {
           <p>
             <span className="text-muted-foreground">Agreement file:</span>{" "}
             {data.agreementFile ? (
-              <a
+              <button
+                type="button"
                 className="text-primary hover:underline"
-                href={`${import.meta.env.VITE_API_URL || "http://localhost:3000"}${data.agreementFile}`}
-                target="_blank"
-                rel="noreferrer"
+                onClick={() =>
+                  void downloadAgreement(data.agreementFile!).catch((error) =>
+                    toast({
+                      title: "Unable to download agreement",
+                      description: getApiErrorMessage(error),
+                      variant: "destructive",
+                    }),
+                  )
+                }
               >
                 Download
-              </a>
+              </button>
             ) : (
               "—"
             )}
@@ -434,7 +445,9 @@ export default function RentalDetailPage() {
                       <TableCell className="text-sm whitespace-nowrap">
                         {format(new Date(m.dueDate), "MMM d, yyyy")}
                       </TableCell>
-                      <TableCell className="text-right">{etb(m.expected)}</TableCell>
+                      <TableCell className="text-right">
+                        {etb(m.expected)}
+                      </TableCell>
                       <TableCell className="text-right text-emerald-700 dark:text-emerald-400">
                         {etb(m.paid)}
                       </TableCell>
@@ -480,7 +493,10 @@ export default function RentalDetailPage() {
               }}
             >
               <DialogTrigger asChild>
-                <Button size="sm">
+                <Button
+                  disabled={!hasPermission("rental_payments.write")}
+                  size="sm"
+                >
                   <Plus className="h-4 w-4 mr-1" />
                   Record payment
                 </Button>
@@ -562,7 +578,9 @@ export default function RentalDetailPage() {
         </CardHeader>
         <CardContent>
           {data.payments.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No payments recorded</p>
+            <p className="text-sm text-muted-foreground">
+              No payments recorded
+            </p>
           ) : (
             <div className="rounded-md border">
               <Table>

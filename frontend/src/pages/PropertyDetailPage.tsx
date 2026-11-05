@@ -1,3 +1,4 @@
+import { useAuth } from "@/contexts/AuthContext";
 import React, { useEffect, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -99,6 +100,7 @@ const emptyForm = {
 };
 
 export default function PropertyDetailPage() {
+  const { hasPermission } = useAuth();
   const { id } = useParams<{ id: string }>();
   const [searchParams, setSearchParams] = useSearchParams();
   const qc = useQueryClient();
@@ -160,8 +162,7 @@ export default function PropertyDetailPage() {
         woreda: form.woreda,
         kebele: form.kebele,
         houseNumber: form.houseNumber,
-        rooms:
-          form.type === "residential" ? Number(form.rooms) : null,
+        rooms: form.type === "residential" ? Number(form.rooms) : null,
         area: Number(form.area),
         status: form.status,
         latitude: form.latitude ? Number(form.latitude) : null,
@@ -206,7 +207,9 @@ export default function PropertyDetailPage() {
             Back
           </Link>
         </Button>
-        <h1 className="text-2xl font-bold">{property.code ?? property.houseNumber}</h1>
+        <h1 className="text-2xl font-bold">
+          {property.code ?? property.houseNumber}
+        </h1>
         <StatusBadge status={property.status} />
         <Button size="sm" variant="outline" onClick={openEdit}>
           <Pencil className="h-4 w-4 mr-1" />
@@ -231,7 +234,8 @@ export default function PropertyDetailPage() {
             </p>
             <p>
               <span className="text-muted-foreground">Location:</span> Woreda{" "}
-              {property.woreda}, Kebele {property.kebele}, #{property.houseNumber}
+              {property.woreda}, Kebele {property.kebele}, #
+              {property.houseNumber}
             </p>
             {property.type === "residential" ? (
               <p>
@@ -282,8 +286,8 @@ export default function PropertyDetailPage() {
             </CardHeader>
             <CardContent>
               <p className="text-sm">
-                <span className="text-muted-foreground">Monthly rent:</span>{" "}
-                ETB {tenant.rental.monthlyRent.toLocaleString()}
+                <span className="text-muted-foreground">Monthly rent:</span> ETB{" "}
+                {tenant.rental.monthlyRent.toLocaleString()}
               </p>
               <p className="text-sm mt-2">
                 <span className="text-muted-foreground">Total recorded:</span>{" "}
@@ -317,9 +321,7 @@ export default function PropertyDetailPage() {
             {tenant.rental.agreementNumber ? (
               <p>Agreement: {tenant.rental.agreementNumber}</p>
             ) : null}
-            <p>
-              Rent ETB {tenant.rental.monthlyRent.toLocaleString()}
-            </p>
+            <p>Rent ETB {tenant.rental.monthlyRent.toLocaleString()}</p>
             <StatusBadge status={tenant.rental.status} />
           </CardContent>
         </Card>
@@ -492,7 +494,11 @@ export default function PropertyDetailPage() {
               onChange={(c) => setForm((f) => ({ ...f, ...c }))}
             />
             <div className="col-span-2">
-              <Button type="submit" className="w-full">
+              <Button
+                type="submit"
+                disabled={!hasPermission("properties.write")}
+                className="w-full"
+              >
                 Save changes
               </Button>
             </div>

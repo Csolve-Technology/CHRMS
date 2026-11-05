@@ -1,5 +1,13 @@
-import { UserRole } from '@prisma/client';
-import { IsEmail, IsEnum, IsString, MinLength } from 'class-validator';
+import {
+  IsArray,
+  ArrayUnique,
+  ArrayMaxSize,
+  MaxLength,
+  IsEmail,
+  IsOptional,
+  IsString,
+  MinLength,
+} from 'class-validator';
 
 export class CreateUserDto {
   @IsEmail()
@@ -13,6 +21,15 @@ export class CreateUserDto {
   @MinLength(8)
   password: string;
 
-  @IsEnum(UserRole)
-  role: UserRole;
+  @IsOptional()
+  @IsString()
+  role?: string;
+
+  @IsOptional()
+  @IsArray()
+  @ArrayUnique()
+  @ArrayMaxSize(50)
+  @IsString({ each: true })
+  @MaxLength(100, { each: true })
+  roles?: string[];
 }

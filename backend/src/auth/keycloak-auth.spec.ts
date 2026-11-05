@@ -16,7 +16,10 @@ import { UserRole } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { PermissionsGuard } from '../common/guards/permissions.guard';
 import { RequirePermissions } from '../common/decorators/permissions.decorator';
-import { Permission } from '../common/constants/permissions';
+import {
+  Permission,
+  permissionsForRole,
+} from '../common/constants/permissions';
 import { JwtStrategy } from './strategies/jwt.strategy';
 import { KeycloakUserService } from './keycloak-user.service';
 import { AuthController } from './auth.controller';
@@ -50,7 +53,10 @@ describe('Chiro Auth token verification and CHRMS authorization', () => {
   const signingKey = privateKey
     .export({ type: 'pkcs8', format: 'pem' })
     .toString();
-  const prisma = { user: { findUnique: jest.fn(), upsert: jest.fn() } };
+  const prisma = {
+    role: { findMany: jest.fn() },
+    user: { findUnique: jest.fn(), upsert: jest.fn() },
+  };
   const base = () => ({
     sub: 'keycloak-user-id',
     typ: 'Bearer',
@@ -115,6 +121,16 @@ describe('Chiro Auth token verification and CHRMS authorization', () => {
   });
   beforeEach(() => {
     jest.clearAllMocks();
+    prisma.role.findMany.mockImplementation(({ where }) =>
+      Promise.resolve(
+        where.name.in
+          .filter((name: string) => ['ADMIN', 'HOUSING_OFFICER'].includes(name))
+          .map((name: string) => ({
+            name,
+            permissions: permissionsForRole(name as UserRole),
+          })),
+      ),
+    );
     prisma.user.findUnique.mockResolvedValue(null);
     prisma.user.upsert.mockImplementation(({ create, update }) =>
       Promise.resolve({
@@ -132,15 +148,13 @@ describe('Chiro Auth token verification and CHRMS authorization', () => {
 
   it('provisions an authorized, verified identity and returns the local user ID', async () => {
     const response = await get(token()).expect(200);
-    expect(response.body).toEqual({
+    expect(response.body).toMatchObject({
       sub: 'local-user-id',
       fullName: 'Land Officer',
       email: 'officer@example.com',
       role: 'HOUSING_OFFICER',
     });
-    expect(
-      prisma.user.upsert.mock.calls[0][0].create.passwordHash,
-    ).toBeNull();
+    expect(prisma.user.upsert.mock.calls[0][0].create.passwordHash).toBeNull();
   });
   it.each([
     [
@@ -245,9 +259,78 @@ describe('Chiro Auth token verification and CHRMS authorization', () => {
   });
   it('returns the browser profile shape and disables the actual local login endpoint', async () => {
     const me = await get(token(), '/auth/me').expect(200);
-    expect(me.body).toMatchObject({ id: 'local-user-id', fullName: 'Land Officer', role: 'HOUSING_OFFICER' });
-    const configResponse = await request(app.getHttpServer()).get('/auth/config').expect(200);
+    expect(me.body).toMatchObject({
+      id: 'local-user-id',
+      fullName: 'Land Officer',
+      role: 'HOUSING_OFFICER',
+    });
+    const configResponse = await request(app.getHttpServer())
+      .get('/auth/config')
+      .expect(200);
     expect(configResponse.body.mode).toBe('keycloak');
-    await request(app.getHttpServer()).post('/auth/login').send({ email: 'admin@example.com', password: 'password' }).expect(403);
+    await request(app.getHttpServer())
+      .post('/auth/login')
+      .send({ email: 'admin@example.com', password: 'password' })
+      .expect(403);
+  });
+  it('allows configured custom roles and uses their explicit permission grants', async () => {
+    prisma.role.findMany.mockResolvedValue([
+      { name: 'AUDITOR', permissions: ['users.write'] },
+    ]);
+    const bearer = token({
+      resource_access: { 'chrms-api': { roles: ['AUDITOR'] } },
+    });
+    const response = await get(bearer).expect(200);
+    expect(response.body.roles).toEqual(['AUDITOR']);
+    expect(response.body.permissions).toEqual(['users.write']);
+    await get(bearer, '/probe/admin').expect(200);
+    prisma.role.findMany.mockResolvedValue([
+      { name: 'AUDITOR', permissions: [] },
+    ]);
+    await get(bearer, '/probe/admin').expect(403);
+  });
+  it('combines the permissions of all configured client roles', async () => {
+    prisma.role.findMany.mockResolvedValue([
+      { name: 'READER', permissions: ['properties.read'] },
+      { name: 'WRITER', permissions: ['properties.write'] },
+    ]);
+    const response = await get(
+      token({
+        resource_access: { 'chrms-api': { roles: ['READER', 'WRITER'] } },
+      }),
+    ).expect(200);
+    expect(response.body.permissions).toEqual([
+      'properties.read',
+      'properties.write',
+    ]);
+    expect(response.body.roles).toEqual(['READER', 'WRITER']);
+  });
+  it('blocks disabled users and stale tokens after role updates', async () => {
+    prisma.user.findUnique.mockResolvedValue({
+      isActive: false,
+      keycloakIssuer: issuer,
+    });
+    await get(token()).expect(403);
+    prisma.user.findUnique.mockResolvedValue({
+      isActive: true,
+      keycloakIssuer: issuer,
+      rolesValidAfter: BigInt(Math.ceil(Date.now() / 1000) + 2),
+    });
+    await get(token()).expect(401);
+  });
+  it('requires issuance time for role-revocation enforcement', async () => {
+    await get(token({}, { noTimestamp: true })).expect(401);
+  });
+  it('does not write unchanged role memberships on every authenticated request', async () => {
+    prisma.user.findUnique.mockResolvedValue({
+      id: 'linked',
+      email: 'officer@example.com',
+      fullName: 'Existing',
+      isActive: true,
+      keycloakIssuer: issuer,
+      roleNames: ['HOUSING_OFFICER'],
+    });
+    await get(token()).expect(200);
+    expect(prisma.user.upsert).not.toHaveBeenCalled();
   });
 });

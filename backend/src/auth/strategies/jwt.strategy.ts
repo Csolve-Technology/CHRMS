@@ -4,6 +4,7 @@ import { PassportStrategy } from '@nestjs/passport';
 import { ExtractJwt, Strategy } from 'passport-jwt';
 import { PrismaService } from '../../prisma/prisma.service';
 import { passportJwtSecret } from 'jwks-rsa';
+import { rolePermissions } from '../role-access';
 import { authConfig } from '../auth.config';
 import { KeycloakPayload, KeycloakUserService } from '../keycloak-user.service';
 
@@ -52,12 +53,15 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
     const user = await this.prisma.user.findUnique({
       where: { id: payload.sub },
     });
-    if (!user) throw new UnauthorizedException();
+    if (!user || !user.isActive) throw new UnauthorizedException();
+    const access = await rolePermissions(this.prisma, user.roleNames);
     return {
       sub: user.id,
       email: user.email,
       fullName: user.fullName,
-      role: user.role,
+      role: access.names[0] ?? '',
+      roles: access.names,
+      permissions: access.permissions,
     };
   }
 }

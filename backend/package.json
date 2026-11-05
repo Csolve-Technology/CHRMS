@@ -22,7 +22,7 @@
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "prisma:seed": "prisma db seed",
-    "test:auth": "jest --runInBand keycloak-auth.spec.ts"
+    "test:auth": "jest --runInBand keycloak-auth.spec.ts role-management.spec.ts"
   },
   "prisma": {
     "seed": "ts-node --compiler-options {\"module\":\"CommonJS\"} prisma/seed.ts"

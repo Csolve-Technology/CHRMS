@@ -1,3 +1,4 @@
+import { useAuth } from "@/contexts/AuthContext";
 import React, { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
@@ -76,6 +77,7 @@ type TenantDetail = {
 };
 
 export default function TenantsPage() {
+  const { hasPermission } = useAuth();
   const [q, setQ] = useState("");
   const [debouncedQ, setDebouncedQ] = useState("");
   const [page, setPage] = useState(1);
@@ -237,7 +239,7 @@ export default function TenantsPage() {
         </div>
         <Dialog open={creating} onOpenChange={setCreating}>
           <DialogTrigger asChild>
-            <Button>
+            <Button disabled={!hasPermission("tenants.write")}>
               <Plus className="h-4 w-4 mr-1" />
               Add tenant
             </Button>
@@ -251,7 +253,9 @@ export default function TenantsPage() {
                 <Label>Full name</Label>
                 <Input
                   value={form.fullName}
-                  onChange={(e) => setForm((f) => ({ ...f, fullName: e.target.value }))}
+                  onChange={(e) =>
+                    setForm((f) => ({ ...f, fullName: e.target.value }))
+                  }
                   required
                 />
               </div>
@@ -274,7 +278,9 @@ export default function TenantsPage() {
                 <Label>Phone</Label>
                 <Input
                   value={form.phone}
-                  onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))}
+                  onChange={(e) =>
+                    setForm((f) => ({ ...f, phone: e.target.value }))
+                  }
                   required
                 />
               </div>
@@ -285,14 +291,18 @@ export default function TenantsPage() {
                   autoComplete="off"
                   placeholder="e.g. CHI-10001"
                   value={form.nationalId}
-                  onChange={(e) => setForm((f) => ({ ...f, nationalId: e.target.value }))}
+                  onChange={(e) =>
+                    setForm((f) => ({ ...f, nationalId: e.target.value }))
+                  }
                 />
               </div>
               <div className="col-span-2">
                 <Label>Address</Label>
                 <Input
                   value={form.address}
-                  onChange={(e) => setForm((f) => ({ ...f, address: e.target.value }))}
+                  onChange={(e) =>
+                    setForm((f) => ({ ...f, address: e.target.value }))
+                  }
                   placeholder="Woreda, kebele, house / street"
                 />
               </div>
@@ -302,7 +312,9 @@ export default function TenantsPage() {
                   type="number"
                   min={0}
                   value={form.familySize}
-                  onChange={(e) => setForm((f) => ({ ...f, familySize: e.target.value }))}
+                  onChange={(e) =>
+                    setForm((f) => ({ ...f, familySize: e.target.value }))
+                  }
                   required
                 />
               </div>
@@ -322,7 +334,13 @@ export default function TenantsPage() {
                 </Select>
               </div>
               <div className="col-span-2">
-                <Button type="submit" className="w-full">Save</Button>
+                <Button
+                  type="submit"
+                  disabled={!hasPermission("tenants.write")}
+                  className="w-full"
+                >
+                  Save
+                </Button>
               </div>
             </form>
           </DialogContent>
@@ -332,7 +350,9 @@ export default function TenantsPage() {
       <Card>
         <CardHeader>
           <CardTitle>Directory</CardTitle>
-          <CardDescription>Newest first — search by name, phone, ID, or address</CardDescription>
+          <CardDescription>
+            Newest first — search by name, phone, ID, or address
+          </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="relative max-w-md">
@@ -350,98 +370,104 @@ export default function TenantsPage() {
             </p>
           ) : (
             <>
-            <div className="rounded-md border">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Name</TableHead>
-                    <TableHead>Property</TableHead>
-                    <TableHead>Phone</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead className="text-right">Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {isLoading ? (
+              <div className="rounded-md border">
+                <Table>
+                  <TableHeader>
                     <TableRow>
-                      <TableCell colSpan={5} className="text-center py-8">
-                        Loading…
-                      </TableCell>
+                      <TableHead>Name</TableHead>
+                      <TableHead>Property</TableHead>
+                      <TableHead>Phone</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead className="text-right">Actions</TableHead>
                     </TableRow>
-                  ) : rows.length === 0 ? (
-                    <TableRow>
-                      <TableCell colSpan={5} className="text-center py-8">
-                        No tenants
-                      </TableCell>
-                    </TableRow>
-                  ) : (
-                    rows.map((t) => (
-                      <TableRow key={t.id}>
-                        <TableCell className="font-medium">{t.fullName}</TableCell>
-                        <TableCell>{t.propertyCode ?? "—"}</TableCell>
-                        <TableCell>{t.phone}</TableCell>
-                        <TableCell>
-                          <StatusBadge status={t.status} />
-                        </TableCell>
-                        <TableCell className="text-right">
-                          <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                className="h-8 w-8 p-0"
-                                disabled={deletingId === t.id}
-                              >
-                                <MoreHorizontal className="h-4 w-4" />
-                                <span className="sr-only">Open menu</span>
-                              </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end">
-                              <DropdownMenuItem asChild>
-                                <Link to={`/tenants/${t.id}`}>
-                                  <Eye className="mr-2 h-4 w-4" />
-                                  View
-                                </Link>
-                              </DropdownMenuItem>
-                              <DropdownMenuItem
-                                onSelect={(e) => {
-                                  e.preventDefault();
-                                  void startEdit(t);
-                                }}
-                              >
-                                <Pencil className="mr-2 h-4 w-4" />
-                                Edit
-                              </DropdownMenuItem>
-                              <DropdownMenuSeparator />
-                              <DropdownMenuItem
-                                className="text-destructive focus:text-destructive"
-                                disabled={deletingId === t.id}
-                                onSelect={(e) => {
-                                  e.preventDefault();
-                                  setDeleteTarget(t);
-                                }}
-                              >
-                                <Trash2 className="mr-2 h-4 w-4" />
-                                Delete
-                              </DropdownMenuItem>
-                            </DropdownMenuContent>
-                          </DropdownMenu>
+                  </TableHeader>
+                  <TableBody>
+                    {isLoading ? (
+                      <TableRow>
+                        <TableCell colSpan={5} className="text-center py-8">
+                          Loading…
                         </TableCell>
                       </TableRow>
-                    ))
-                  )}
-                </TableBody>
-              </Table>
-            </div>
-            {data ? (
-              <TablePagination
-                page={data.page}
-                pageSize={data.pageSize}
-                total={data.total}
-                totalPages={data.totalPages}
-                onPageChange={setPage}
-              />
-            ) : null}
+                    ) : rows.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={5} className="text-center py-8">
+                          No tenants
+                        </TableCell>
+                      </TableRow>
+                    ) : (
+                      rows.map((t) => (
+                        <TableRow key={t.id}>
+                          <TableCell className="font-medium">
+                            {t.fullName}
+                          </TableCell>
+                          <TableCell>{t.propertyCode ?? "—"}</TableCell>
+                          <TableCell>{t.phone}</TableCell>
+                          <TableCell>
+                            <StatusBadge status={t.status} />
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  className="h-8 w-8 p-0"
+                                  disabled={deletingId === t.id}
+                                >
+                                  <MoreHorizontal className="h-4 w-4" />
+                                  <span className="sr-only">Open menu</span>
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end">
+                                <DropdownMenuItem asChild>
+                                  <Link to={`/tenants/${t.id}`}>
+                                    <Eye className="mr-2 h-4 w-4" />
+                                    View
+                                  </Link>
+                                </DropdownMenuItem>
+                                {hasPermission("tenants.write") && (
+                                  <DropdownMenuItem
+                                    onSelect={(e) => {
+                                      e.preventDefault();
+                                      void startEdit(t);
+                                    }}
+                                  >
+                                    <Pencil className="mr-2 h-4 w-4" />
+                                    Edit
+                                  </DropdownMenuItem>
+                                )}
+                                <DropdownMenuSeparator />
+                                {hasPermission("tenants.write") && (
+                                  <DropdownMenuItem
+                                    className="text-destructive focus:text-destructive"
+                                    disabled={deletingId === t.id}
+                                    onSelect={(e) => {
+                                      e.preventDefault();
+                                      setDeleteTarget(t);
+                                    }}
+                                  >
+                                    <Trash2 className="mr-2 h-4 w-4" />
+                                    Delete
+                                  </DropdownMenuItem>
+                                )}
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          </TableCell>
+                        </TableRow>
+                      ))
+                    )}
+                  </TableBody>
+                </Table>
+              </div>
+              {data ? (
+                <TablePagination
+                  page={data.page}
+                  pageSize={data.pageSize}
+                  total={data.total}
+                  totalPages={data.totalPages}
+                  onPageChange={setPage}
+                />
+              ) : null}
             </>
           )}
         </CardContent>
@@ -465,7 +491,9 @@ export default function TenantsPage() {
               <Label>Full name</Label>
               <Input
                 value={form.fullName}
-                onChange={(e) => setForm((f) => ({ ...f, fullName: e.target.value }))}
+                onChange={(e) =>
+                  setForm((f) => ({ ...f, fullName: e.target.value }))
+                }
                 required
               />
             </div>
@@ -488,7 +516,9 @@ export default function TenantsPage() {
               <Label>Phone</Label>
               <Input
                 value={form.phone}
-                onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))}
+                onChange={(e) =>
+                  setForm((f) => ({ ...f, phone: e.target.value }))
+                }
                 required
               />
             </div>
@@ -499,14 +529,18 @@ export default function TenantsPage() {
                 autoComplete="off"
                 placeholder="e.g. CHI-10001"
                 value={form.nationalId}
-                onChange={(e) => setForm((f) => ({ ...f, nationalId: e.target.value }))}
+                onChange={(e) =>
+                  setForm((f) => ({ ...f, nationalId: e.target.value }))
+                }
               />
             </div>
             <div className="col-span-2">
               <Label>Address</Label>
               <Input
                 value={form.address}
-                onChange={(e) => setForm((f) => ({ ...f, address: e.target.value }))}
+                onChange={(e) =>
+                  setForm((f) => ({ ...f, address: e.target.value }))
+                }
                 placeholder="Woreda, kebele, house / street"
               />
             </div>
@@ -516,7 +550,9 @@ export default function TenantsPage() {
                 type="number"
                 min={0}
                 value={form.familySize}
-                onChange={(e) => setForm((f) => ({ ...f, familySize: e.target.value }))}
+                onChange={(e) =>
+                  setForm((f) => ({ ...f, familySize: e.target.value }))
+                }
                 required
               />
             </div>
@@ -536,7 +572,13 @@ export default function TenantsPage() {
               </Select>
             </div>
             <div className="col-span-2">
-              <Button type="submit" className="w-full">Update</Button>
+              <Button
+                type="submit"
+                disabled={!hasPermission("tenants.write")}
+                className="w-full"
+              >
+                Update
+              </Button>
             </div>
           </form>
         </DialogContent>

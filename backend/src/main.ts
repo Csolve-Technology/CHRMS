@@ -28,7 +28,7 @@ async function bootstrap() {
   }
 
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
-  app.useStaticAssets(uploadsRoot, { prefix: '/uploads/' });
+  // Agreement downloads use the authenticated AgreementFilesController.
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true,

@@ -53,12 +53,13 @@ const getInitials = (name: string) => {
 };
 
 const Header: React.FC<HeaderProps> = ({ onToggleSidebar, isCollapsed }) => {
-  const { user, logout } = useAuth();
+  const { user, logout, hasPermission } = useAuth();
   const { t } = useI18n();
   const qc = useQueryClient();
 
   const notifQ = useQuery({
     queryKey: ["notifications"],
+    enabled: hasPermission("dashboard.read"),
     queryFn: async () => {
       const res = await api.get<{
         items: AppNotification[];
@@ -223,7 +224,8 @@ const Header: React.FC<HeaderProps> = ({ onToggleSidebar, isCollapsed }) => {
               ) : (
                 notifications.slice(0, 8).map((notification) => {
                   const href =
-                    notification.entityType === "rental" && notification.entityId
+                    notification.entityType === "rental" &&
+                    notification.entityId
                       ? `/rentals/${notification.entityId}`
                       : undefined;
                   return (
@@ -238,7 +240,10 @@ const Header: React.FC<HeaderProps> = ({ onToggleSidebar, isCollapsed }) => {
                       data-path="src/components/layout/Header.tsx"
                     >
                       {href ? (
-                        <Link to={href} className="flex flex-col items-start w-full">
+                        <Link
+                          to={href}
+                          className="flex flex-col items-start w-full"
+                        >
                           <div className="flex items-center justify-between w-full gap-2">
                             <p
                               className={`text-sm ${
