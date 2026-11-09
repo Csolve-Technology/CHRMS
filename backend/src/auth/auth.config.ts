@@ -8,7 +8,7 @@ export function authConfig(config: ConfigService) {
   const url = (
     config.get<string>('KEYCLOAK_URL') ?? 'https://auth.chirocity.gov.et'
   ).replace(/\/$/, '');
-  const realm = config.get<string>('KEYCLOAK_REALM') ?? 'chirocity';
+  const realm = config.get<string>('KEYCLOAK_REALM') ?? 'chrms';
   const clientId = config.get<string>('KEYCLOAK_CLIENT_ID') ?? 'chrms-web';
   const audience = config.get<string>('KEYCLOAK_AUDIENCE') ?? 'chrms-api';
   if (mode === 'keycloak') {

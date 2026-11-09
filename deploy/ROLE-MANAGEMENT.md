@@ -9,7 +9,7 @@ Local NestJS loads `backend/.env` through ConfigModule. Save these only in the p
 ```env
 AUTH_MODE=keycloak
 KEYCLOAK_URL=https://auth.chirocity.gov.et
-KEYCLOAK_REALM=chirocity
+KEYCLOAK_REALM=chrms
 KEYCLOAK_CLIENT_ID=chrms-web
 KEYCLOAK_AUDIENCE=chrms-api
 KEYCLOAK_ADMIN_CLIENT_ID=chrms-provisioner

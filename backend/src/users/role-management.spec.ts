@@ -91,7 +91,7 @@ describe('CHRMS dynamic role and user API', () => {
           roleNames: ['ADMIN'],
           isActive: true,
           keycloakSub: 'admin-sub',
-          keycloakIssuer: 'https://auth.chirocity.gov.et/realms/chirocity',
+          keycloakIssuer: 'https://auth.chirocity.gov.et/realms/chrms',
         },
       ],
       [
@@ -104,7 +104,7 @@ describe('CHRMS dynamic role and user API', () => {
           roleNames: ['HOUSING_OFFICER'],
           isActive: true,
           keycloakSub: 'target-sub',
-          keycloakIssuer: 'https://auth.chirocity.gov.et/realms/chirocity',
+          keycloakIssuer: 'https://auth.chirocity.gov.et/realms/chrms',
         },
       ],
     ]);
