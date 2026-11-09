@@ -1,3 +1,4 @@
+import CentralAuthGate from '@/components/CentralAuthGate';
 import React, {
   createContext,
   useContext,
@@ -40,7 +41,7 @@ interface AuthContextType {
   token: string | null;
   login: (email: string, password: string) => Promise<LoginResult>;
   loginWithSSO: (provider: string) => Promise<LoginResult>;
-  logout: () => void;
+  logout: () => Promise<void>;
   isAuthenticated: boolean;
   hasPermission: (permission: string) => boolean;
   isLoading: boolean;
@@ -186,9 +187,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
       return { ok: false, error };
     }
   };
-  const logout = () => {
-    clear();
-    void signOut().catch(() => endSession());
+  const logout = async () => {
+    setIsLoading(true);
+    try {
+      await signOut();
+      clear();
+      if (authMode === 'local') setIsLoading(false);
+    } catch {
+      setLastError('Unable to sign out of Chiro Auth. Please try again.');
+      setIsLoading(false);
+    }
   };
   const hasPermission = (permission: string) => {
     const aliases: Record<string, string[]> = {
@@ -219,6 +227,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
     );
   }
   return (
+    <CentralAuthGate active={authMode === 'keycloak'} loading={isLoading} authenticated={!!user} error={lastError} onSignOut={logout}>
     <AuthContext.Provider
       value={{
         user,
@@ -235,6 +244,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
     >
       {children}
     </AuthContext.Provider>
+    </CentralAuthGate>
   );
 };
 

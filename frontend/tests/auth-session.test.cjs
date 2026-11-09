@@ -42,7 +42,7 @@ test('SSO initialization is shared, requires PKCE and removes legacy persisted c
   assert.equal(calls.length, 1);
   assert.equal(calls[0][1].pkceMethod, 'S256');
   assert.equal(calls[0][1].flow, 'standard');
-  assert.equal(calls[0][1].onLoad, 'check-sso');
+  assert.equal(calls[0][1].onLoad, 'login-required');
   assert.equal(storage.size, 0);
 });
 test('API requests refresh the in-memory token without persisting it', async () => {

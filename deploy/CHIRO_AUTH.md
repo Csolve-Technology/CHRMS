@@ -17,3 +17,8 @@ After deployment, run **Configure CHRMS Chiro Auth** with the independently veri
 Passwords, accounts and role grants are managed in Chiro Auth once enabled. Users must sign out and sign in again after changes. Existing CHRMS operational and audit data are retained. No business-data seed is run.
 
 Run **Verify live CHRMS browser login** after activation to verify the page renders and reaches the central login form. This does not authenticate as a real user.
+
+
+## Automatic Chiro Auth login
+
+In Keycloak mode, unauthenticated entries open Keycloak automatically without the middle app sign-in screen. Existing SSO sessions enter directly. Access/configuration errors show recovery controls and do not loop. Logout blocks automatic sign-in until central logout completes. Keep the existing /login redirect/logout URI and web origins; no realm or role changes are required. Explicit local authentication mode retains its local form.

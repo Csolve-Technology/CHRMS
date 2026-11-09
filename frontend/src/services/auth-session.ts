@@ -53,7 +53,7 @@ export function initializeSso() {
     void accessToken().catch(() => undefined);
   };
   initialization ??= keycloak.init({
-    onLoad: "check-sso",
+    onLoad: "login-required",
     pkceMethod: "S256",
     flow: "standard",
     checkLoginIframe: false,
@@ -71,7 +71,7 @@ export async function signIn() {
 export async function signOut() {
   localStorage.removeItem("chrms_token");
   localStorage.removeItem("chrms_user");
-  if (keycloak?.authenticated) {
+  if (keycloak) {
     await keycloak.logout({ redirectUri: `${window.location.origin}/login` });
   } else {
     endSession();
