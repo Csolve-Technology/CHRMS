@@ -1,3 +1,5 @@
+// These fixtures isolate existing JWT/RBAC behavior; lifecycle transport is tested separately.
+jest.mock('./identity-lifecycle', () => ({ IdentityLifecycle: jest.fn().mockImplementation(() => ({ assertActive: jest.fn(async () => {}), visibleWhere: jest.fn(async () => ({})), setEnabled: jest.fn(async () => {}), deleteUser: jest.fn(async () => {}) })) }));
 import {
   Controller,
   Get,

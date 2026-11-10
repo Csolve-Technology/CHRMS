@@ -23,7 +23,8 @@
     "prisma:migrate": "prisma migrate dev",
     "prisma:seed": "prisma db seed",
     "test:bootstrap": "node --test scripts/bootstrap-admin.test.cjs",
-    "test:auth": "jest --runInBand keycloak-auth.spec.ts role-management.spec.ts"
+    "test:auth": "jest --runInBand keycloak-auth.spec.ts role-management.spec.ts && npm run test:lifecycle",
+    "test:lifecycle": "node --test scripts/test-identity-lifecycle.cjs"
   },
   "prisma": {
     "seed": "ts-node --compiler-options {\"module\":\"CommonJS\"} prisma/seed.ts"

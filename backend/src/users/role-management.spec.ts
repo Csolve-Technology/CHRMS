@@ -1,3 +1,6 @@
+import { IdentityLifecycle } from '../auth/identity-lifecycle';
+// These fixtures isolate existing JWT/RBAC behavior; lifecycle transport is tested separately.
+jest.mock('../auth/identity-lifecycle', () => ({ IdentityLifecycle: jest.fn().mockImplementation(() => ({ assertActive: jest.fn(async () => {}), visibleWhere: jest.fn(async () => ({})), setEnabled: jest.fn(async () => {}), deleteUser: jest.fn(async () => {}) })) }));
 import { AgreementFilesController } from '../rentals/agreement-files.controller';
 import {
   INestApplication,
@@ -149,6 +152,7 @@ describe('CHRMS dynamic role and user API', () => {
       users.set(value.id, value);
       return pick(value, select);
     });
+    prisma.user.findUniqueOrThrow = prisma.user.findUnique;
     prisma.user.update = jest.fn(async ({ where, data, select }: any) => {
       const value = { ...users.get(where.id), ...data };
       users.set(where.id, value);
@@ -332,11 +336,13 @@ describe('CHRMS dynamic role and user API', () => {
       })
       .expect(409);
   });
-  it('disables only local app access without deleting the shared identity', async () => {
+  it('deletes the dedicated central identity and retains local history', async () => {
     const remote = jest.spyOn(KeycloakAdmin.prototype, 'request');
     await request(app.getHttpServer()).delete('/users/target').expect(200);
     expect(users.get('target').isActive).toBe(false);
     expect(remote).not.toHaveBeenCalled();
+    const lifecycle = (IdentityLifecycle as any).mock.results.at(-1).value;
+    expect(lifecycle.deleteUser).toHaveBeenCalledWith('target-sub', 'https://auth.chirocity.gov.et/realms/chrms');
   });
   it('protects the last administrator and self-disable', async () => {
     await request(app.getHttpServer())
