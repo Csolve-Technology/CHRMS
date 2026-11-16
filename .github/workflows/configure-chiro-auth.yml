@@ -40,7 +40,7 @@ jobs:
             compose exec -T chrms-api node <<'NODE'
             (async () => {
               const url = process.env.KEYCLOAK_URL || 'https://auth.chirocity.gov.et';
-              const realm = process.env.KEYCLOAK_REALM || 'chirocity';
+              const realm = process.env.KEYCLOAK_REALM || 'chrms';
               const discovery = await fetch(`${url}/realms/${realm}/.well-known/openid-configuration`, { signal: AbortSignal.timeout(15000) });
               if (!discovery.ok) throw new Error('Chiro Auth realm discovery failed: ' + discovery.status);
               const metadata = await discovery.json();

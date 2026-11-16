@@ -1,3 +1,5 @@
+// These fixtures isolate existing JWT/RBAC behavior; lifecycle transport is tested separately.
+jest.mock('./identity-lifecycle', () => ({ IdentityLifecycle: jest.fn().mockImplementation(() => ({ assertActive: jest.fn(async () => {}), visibleWhere: jest.fn(async () => ({})), setEnabled: jest.fn(async () => {}), deleteUser: jest.fn(async () => {}) })) }));
 import {
   Controller,
   Get,
@@ -101,7 +103,7 @@ describe('Chiro Auth token verification and CHRMS authorization', () => {
     await new Promise<void>((resolve) => jwks.listen(0, '127.0.0.1', resolve));
     const address = jwks.address() as { port: number };
     const url = `http://127.0.0.1:${address.port}`;
-    issuer = `${url}/realms/chirocity`;
+    issuer = `${url}/realms/chrms`;
     config = new ConfigService({ AUTH_MODE: 'keycloak', KEYCLOAK_URL: url });
     const module = await Test.createTestingModule({
       imports: [PassportModule],
@@ -160,7 +162,7 @@ describe('Chiro Auth token verification and CHRMS authorization', () => {
     [
       'wrong issuer',
       {},
-      { issuer: 'https://another.example/realms/chirocity' },
+      { issuer: 'https://another.example/realms/chrms' },
     ],
     ['wrong audience', {}, { audience: 'hrms-api' }],
     ['expired token', {}, { expiresIn: -10 }],
@@ -240,7 +242,7 @@ describe('Chiro Auth token verification and CHRMS authorization', () => {
   });
   it('rejects identities linked under another issuer', async () => {
     prisma.user.findUnique.mockResolvedValue({
-      keycloakIssuer: 'https://old.example/realms/chirocity',
+      keycloakIssuer: 'https://old.example/realms/chrms',
       isActive: true,
     });
     await get(token()).expect(403);

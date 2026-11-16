@@ -1,3 +1,4 @@
+import { IdentityLifecycle } from '../auth/identity-lifecycle';
 import {
   BadRequestException,
   ConflictException,
@@ -88,6 +89,7 @@ export class UsersService {
         { email: { contains: params.q.trim(), mode: 'insensitive' } },
         { fullName: { contains: params.q.trim(), mode: 'insensitive' } },
       ];
+    if (this.central) where.AND = [await new IdentityLifecycle(authConfig(this.config)).visibleWhere('keycloakSub', 'keycloakIssuer')];
     const [users, total] = await Promise.all([
       this.prisma.user.findMany({
         where,
@@ -260,6 +262,7 @@ export class UsersService {
       throw new BadRequestException('You cannot disable your own account.');
     if (this.central && (dto.email !== undefined || dto.password !== undefined))
       throw new ForbiddenException('Manage email and passwords in Chiro Auth.');
+    if (this.central && dto.isActive !== undefined) await new IdentityLifecycle(authConfig(this.config)).setEnabled(user.keycloakSub, user.keycloakIssuer, dto.isActive);
     const data: Prisma.UserUpdateInput = {};
     if (dto.fullName !== undefined) data.fullName = dto.fullName.trim();
     if (dto.isActive !== undefined) data.isActive = dto.isActive;
@@ -307,6 +310,12 @@ export class UsersService {
     );
   }
   async remove(id: string, actor: JwtUserPayload) {
-    return this.update(id, { isActive: false }, actor);
+    // Run existing delegation/self/last-admin checks and revoke sign-in first.
+    const result = await this.update(id, { isActive: false }, actor);
+    if (this.central) {
+      const identity = await this.prisma.user.findUniqueOrThrow({ where: { id } });
+      await new IdentityLifecycle(authConfig(this.config)).deleteUser(identity.keycloakSub, identity.keycloakIssuer);
+    }
+    return result;
   }
 }

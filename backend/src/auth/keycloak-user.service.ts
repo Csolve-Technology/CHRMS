@@ -1,3 +1,4 @@
+import { IdentityLifecycle } from './identity-lifecycle';
 import {
   ForbiddenException,
   Injectable,
@@ -63,6 +64,7 @@ export class KeycloakUserService {
         'Verify your email address in Chiro Auth before accessing CHRMS.',
       );
     }
+    await new IdentityLifecycle(settings).assertActive(payload.sub);
     const existing = await this.prisma.user.findUnique({
       where: { keycloakSub: payload.sub },
     });
