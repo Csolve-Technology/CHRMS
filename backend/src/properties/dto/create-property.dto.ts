@@ -10,10 +10,6 @@ import {
 } from 'class-validator';
 
 export class CreatePropertyDto {
-  @IsOptional()
-  @IsString()
-  code?: string;
-
   @IsEnum(PropertyType)
   type: PropertyType;
 
@@ -31,7 +27,7 @@ export class CreatePropertyDto {
   @IsString()
   houseNumber: string;
 
-  /** Required for residential; ignored for commercial */
+  /** Optional for residential; ignored for commercial */
   @IsOptional()
   @IsInt()
   @Min(0)

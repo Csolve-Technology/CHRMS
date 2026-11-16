@@ -22,7 +22,6 @@ import {
 } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Separator } from "@/components/ui/separator";
-import { useUsers, useNotifications } from "@/store";
 import { api, getApiErrorMessage } from "@/services/api";
 import { toast } from "@/hooks/use-toast";
 import {

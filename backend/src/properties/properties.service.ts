@@ -5,6 +5,8 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { Prisma, PropertyCategory, PropertyStatus, PropertyType } from '@prisma/client';
+import { existsSync, mkdirSync } from 'fs';
+import { join } from 'path';
 import {
   paginated,
   parsePagination,
@@ -12,6 +14,7 @@ import {
 } from '../common/pagination';
 import { PrismaService } from '../prisma/prisma.service';
 import { saleTotals } from '../sales/sale-calculations.util';
+import { CreatePropertyDocumentDto } from './dto/create-property-document.dto';
 import { CreatePropertyDto } from './dto/create-property.dto';
 import { UpdatePropertyDto } from './dto/update-property.dto';
 import { assertPropertyCategoryType } from './property-category.util';
@@ -20,25 +23,9 @@ import { assertPropertyCategoryType } from './property-category.util';
 export class PropertiesService {
   constructor(private readonly prisma: PrismaService) {}
 
-  private async nextPropertyCode(): Promise<string> {
-    const latest = await this.prisma.property.findFirst({
-      where: { code: { startsWith: 'PROP-' } },
-      orderBy: { code: 'desc' },
-      select: { code: true },
-    });
-    let seq = 1;
-    if (latest?.code) {
-      const n = parseInt(latest.code.replace(/^PROP-/, ''), 10);
-      if (!Number.isNaN(n)) seq = n + 1;
-    }
-    return `PROP-${String(seq).padStart(3, '0')}`;
-  }
-
   private resolveRooms(type: PropertyType, rooms?: number | null) {
     if (type === PropertyType.commercial) return null;
-    if (rooms == null) {
-      throw new BadRequestException('Rooms are required for residential properties');
-    }
+    if (rooms == null || Number.isNaN(rooms as number)) return null;
     return rooms;
   }
 
@@ -60,10 +47,10 @@ export class PropertiesService {
     if (params.q?.trim()) {
       const q = params.q.trim();
       where.OR = [
-        { code: { contains: q, mode: 'insensitive' } },
+        { houseNumber: { contains: q, mode: 'insensitive' } },
         { woreda: { contains: q, mode: 'insensitive' } },
         { kebele: { contains: q, mode: 'insensitive' } },
-        { houseNumber: { contains: q, mode: 'insensitive' } },
+        { code: { contains: q, mode: 'insensitive' } },
       ];
     }
 
@@ -96,7 +83,7 @@ export class PropertiesService {
       let assignee: string | null = null;
       if (activeRental) assignee = activeRental.tenant.fullName;
       else if (latestSale) assignee = latestSale.buyer.fullName;
-      const location = `Woreda ${p.woreda}, Kebele ${p.kebele}, #${p.houseNumber}`;
+      const location = `${p.woreda}, Kebele ${p.kebele}, #${p.houseNumber}`;
       return {
         id: p.id,
         code: p.code,
@@ -118,6 +105,16 @@ export class PropertiesService {
     return paginated(items, total, page, pageSize);
   }
 
+  static documentsDir() {
+    const dir = join(process.cwd(), 'uploads', 'property-documents');
+    if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+    return dir;
+  }
+
+  private documentPublicPath(filename: string) {
+    return `/uploads/property-documents/${filename}`;
+  }
+
   async findOne(id: string) {
     const p = await this.prisma.property.findUnique({
       where: { id },
@@ -132,6 +129,7 @@ export class PropertiesService {
           take: 1,
           include: { buyer: true, payments: true },
         },
+        documents: { orderBy: { createdAt: 'desc' } },
       },
     });
     if (!p) throw new NotFoundException('Property not found');
@@ -230,23 +228,52 @@ export class PropertiesService {
           })()
         : null,
       paymentSummary,
+      documents: p.documents.map((d) => ({
+        id: d.id,
+        title: d.title,
+        filePath: d.filePath,
+        fileName: d.fileName,
+        createdAt: d.createdAt,
+      })),
     };
+  }
+
+  async addDocument(
+    propertyId: string,
+    dto: CreatePropertyDocumentDto,
+    file?: Express.Multer.File,
+  ) {
+    const property = await this.prisma.property.findUnique({
+      where: { id: propertyId },
+      select: { id: true },
+    });
+    if (!property) throw new NotFoundException('Property not found');
+    if (!file) throw new BadRequestException('A document file is required');
+
+    return this.prisma.propertyDocument.create({
+      data: {
+        propertyId,
+        title: dto.title.trim(),
+        filePath: this.documentPublicPath(file.filename),
+        fileName: file.originalname || file.filename,
+      },
+    });
   }
 
   async create(dto: CreatePropertyDto) {
     assertPropertyCategoryType(dto.type, dto.category);
     const rooms = this.resolveRooms(dto.type, dto.rooms);
-    const code = dto.code?.trim() ? dto.code.trim() : await this.nextPropertyCode();
 
     try {
       return await this.prisma.property.create({
         data: {
-          code,
+          // Properties are tracked by house number (unique per city + kebele).
+          code: null,
           type: dto.type,
           category: dto.category ?? null,
           woreda: dto.woreda,
           kebele: dto.kebele,
-          houseNumber: dto.houseNumber,
+          houseNumber: dto.houseNumber.trim(),
           rooms,
           area: dto.area,
           status: dto.status ?? PropertyStatus.available,
@@ -256,14 +283,9 @@ export class PropertiesService {
       });
     } catch (e) {
       if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') {
-        const target = (e.meta?.target as string[] | string | undefined) ?? [];
-        const fields = Array.isArray(target) ? target.join(',') : String(target);
-        if (fields.includes('house_number') || fields.includes('property_address')) {
-          throw new ConflictException(
-            'House number already exists for this woreda and kebele',
-          );
-        }
-        throw new ConflictException('Property code already exists');
+        throw new ConflictException(
+          'House number already exists for this city and kebele',
+        );
       }
       throw e;
     }
@@ -279,12 +301,11 @@ export class PropertiesService {
     assertPropertyCategoryType(nextType, nextCategory);
 
     const data: Prisma.PropertyUpdateInput = {};
-    if (dto.code !== undefined) data.code = dto.code?.trim() ? dto.code.trim() : null;
     if (dto.type !== undefined) data.type = dto.type;
     if (dto.category !== undefined) data.category = dto.category;
     if (dto.woreda !== undefined) data.woreda = dto.woreda;
     if (dto.kebele !== undefined) data.kebele = dto.kebele;
-    if (dto.houseNumber !== undefined) data.houseNumber = dto.houseNumber;
+    if (dto.houseNumber !== undefined) data.houseNumber = dto.houseNumber.trim();
     if (dto.area !== undefined) data.area = dto.area;
     if (dto.status !== undefined) data.status = dto.status;
     if (dto.latitude !== undefined) data.latitude = dto.latitude;
@@ -305,14 +326,9 @@ export class PropertiesService {
         throw new NotFoundException('Property not found');
       }
       if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') {
-        const target = (e.meta?.target as string[] | string | undefined) ?? [];
-        const fields = Array.isArray(target) ? target.join(',') : String(target);
-        if (fields.includes('house_number') || fields.includes('property_address')) {
-          throw new ConflictException(
-            'House number already exists for this woreda and kebele',
-          );
-        }
-        throw new ConflictException('Property code already exists');
+        throw new ConflictException(
+          'House number already exists for this city and kebele',
+        );
       }
       throw e;
     }

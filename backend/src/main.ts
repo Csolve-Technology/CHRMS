@@ -23,8 +23,16 @@ function defaultDevOrigins(): string[] {
 async function bootstrap() {
   const uploadsRoot = join(process.cwd(), 'uploads');
   const agreementsDir = join(uploadsRoot, 'agreements');
+  const propertyDocsDir = join(uploadsRoot, 'property-documents');
+  const paymentReceiptsDir = join(uploadsRoot, 'payment-receipts');
   if (!existsSync(agreementsDir)) {
     mkdirSync(agreementsDir, { recursive: true });
+  }
+  if (!existsSync(propertyDocsDir)) {
+    mkdirSync(propertyDocsDir, { recursive: true });
+  }
+  if (!existsSync(paymentReceiptsDir)) {
+    mkdirSync(paymentReceiptsDir, { recursive: true });
   }
 
   const app = await NestFactory.create<NestExpressApplication>(AppModule);

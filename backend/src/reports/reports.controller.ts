@@ -15,4 +15,10 @@ export class ReportsController {
   summary() {
     return this.reports.summary();
   }
+
+  @Get('overview')
+  @RequirePermissions(Permission.REPORTS_READ)
+  overview() {
+    return this.reports.overview();
+  }
 }

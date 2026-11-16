@@ -36,38 +36,42 @@ import {
 } from "@/components/ui/table";
 import { TablePagination } from "@/components/chrms/TablePagination";
 import { api, getApiErrorMessage } from "@/services/api";
+import { downloadUploadedFile } from "@/services/file-download";
 import { buildPageParams, Paginated } from "@/lib/pagination";
+import { propertyLabel } from "@/lib/property-label";
 import { toast } from "@/hooks/use-toast";
-import { CreditCard, Plus } from "lucide-react";
+import { CreditCard, Download, Plus } from "lucide-react";
 import { format } from "date-fns";
-import { Badge } from "@/components/ui/badge";
-import {
-  formatMonthRentStatus,
-  formatPaymentMethod,
-} from "@/lib/rental-labels";
+import { estimateRentCoverage } from "@/lib/rent-coverage";
+import { formatPaymentMethod } from "@/lib/rental-labels";
 
 type RentalPay = {
   id: string;
-  amount: string;
+  amount: number | string;
   paidAt: string;
   method: string;
   receiptNo: string | null;
+  receiptFile?: string | null;
   kind?: "rent" | "deposit";
-  monthStatus?: "paid" | "partial" | "unpaid" | null;
-  balanceDue?: number | null;
+  coverageLabel?: string | null;
+  monthsCovered?: Array<{
+    label: string;
+    amountApplied: number;
+    statusAfter: string;
+  }>;
   rental: {
-    property: { code: string | null };
+    property: { houseNumber: string; woreda?: string; kebele?: string };
     tenant: { fullName: string };
   };
 };
 
 type SalePay = {
   id: string;
-  amount: string;
+  amount: number | string;
   paidAt: string;
   method: string;
   sale: {
-    property: { code: string | null };
+    property: { houseNumber: string; woreda?: string; kebele?: string };
     buyer: { fullName: string };
   };
 };
@@ -76,16 +80,17 @@ type RentalOption = {
   id: string;
   monthlyRent: number;
   balanceDue?: number | null;
+  outstandingBalance?: number | null;
   status: string;
   agreementNumber?: string | null;
   tenant: { fullName: string };
-  property: { code: string | null };
+  property: { houseNumber: string; woreda?: string; kebele?: string };
 };
 
 type SaleOption = {
   id: string;
   status: string;
-  property: { code: string | null };
+  property: { houseNumber: string; woreda?: string; kebele?: string };
   buyer: { fullName: string };
 };
 
@@ -94,7 +99,7 @@ const emptyRentalForm = {
   amount: "",
   paidAt: format(new Date(), "yyyy-MM-dd"),
   method: "cash",
-  receiptNo: "",
+  receiptFile: null as File | null,
 };
 
 const emptySaleForm = {
@@ -179,22 +184,31 @@ export default function PaymentsPage() {
 
   const createRentalPay = useMutation({
     mutationFn: async () => {
-      await api.post("/rental-payments", {
-        rentalId: rentalForm.rentalId,
-        amount: Number(rentalForm.amount),
-        paidAt: new Date(rentalForm.paidAt).toISOString(),
-        method: rentalForm.method,
-        receiptNo: rentalForm.receiptNo || undefined,
-      });
+      const fd = new FormData();
+      fd.append("rentalId", rentalForm.rentalId);
+      fd.append("amount", String(Number(rentalForm.amount)));
+      fd.append("paidAt", new Date(rentalForm.paidAt).toISOString());
+      fd.append("method", rentalForm.method);
+      if (rentalForm.receiptFile)
+        fd.append("receiptFile", rentalForm.receiptFile);
+      const res = await api.post<{ coverageLabel?: string }>(
+        "/rental-payments",
+        fd,
+      );
+      return res.data;
     },
-    onSuccess: () => {
-      toast({ title: "Rental payment recorded" });
+    onSuccess: (data) => {
+      toast({
+        title: "Rental payment recorded",
+        description: data.coverageLabel ?? undefined,
+      });
       setRentalOpen(false);
       setRentalForm(emptyRentalForm);
       qc.invalidateQueries({ queryKey: ["rental-payments"] });
       qc.invalidateQueries({ queryKey: ["rentals"] });
       qc.invalidateQueries({ queryKey: ["rental"] });
       qc.invalidateQueries({ queryKey: ["notifications"] });
+      qc.invalidateQueries({ queryKey: ["housing"] });
     },
     onError: (err) => {
       toast({
@@ -338,9 +352,12 @@ export default function PaymentsPage() {
                         onValueChange={(v) => {
                           const r = rentalsQ.data?.find((x) => x.id === v);
                           const suggested =
-                            r?.balanceDue != null && r.balanceDue > 0
-                              ? r.balanceDue
-                              : r?.monthlyRent;
+                            r?.outstandingBalance != null &&
+                            r.outstandingBalance > 0
+                              ? r.outstandingBalance
+                              : r?.balanceDue != null && r.balanceDue > 0
+                                ? r.balanceDue
+                                : r?.monthlyRent;
                           setRentalForm((f) => ({
                             ...f,
                             rentalId: v,
@@ -355,7 +372,7 @@ export default function PaymentsPage() {
                         <SelectContent>
                           {(rentalsQ.data ?? []).map((r) => (
                             <SelectItem key={r.id} value={r.id}>
-                              {r.property.code ?? "—"} · {r.tenant.fullName}
+                              {propertyLabel(r.property)} · {r.tenant.fullName}
                               {r.agreementNumber
                                 ? ` (${r.agreementNumber})`
                                 : ""}
@@ -379,6 +396,31 @@ export default function PaymentsPage() {
                         }
                         required
                       />
+                      {(() => {
+                        const r = rentalsQ.data?.find(
+                          (x) => x.id === rentalForm.rentalId,
+                        );
+                        if (!r) return null;
+                        const hint = estimateRentCoverage(
+                          Number(rentalForm.amount),
+                          r.monthlyRent,
+                          r.outstandingBalance,
+                        );
+                        return (
+                          <p className="mt-1 text-xs text-muted-foreground">
+                            Monthly {r.monthlyRent.toLocaleString()} ETB
+                            {r.outstandingBalance != null
+                              ? ` · Outstanding ${r.outstandingBalance.toLocaleString()} ETB`
+                              : ""}
+                            . Multi-month payments allowed.
+                            {hint ? (
+                              <span className="block font-medium text-emerald-700 dark:text-emerald-400">
+                                {hint}
+                              </span>
+                            ) : null}
+                          </p>
+                        );
+                      })()}
                     </div>
                     <div>
                       <Label>Paid on</Label>
@@ -414,13 +456,14 @@ export default function PaymentsPage() {
                       </Select>
                     </div>
                     <div>
-                      <Label>Receipt no. (optional)</Label>
+                      <Label>Receipt (optional)</Label>
                       <Input
-                        value={rentalForm.receiptNo}
+                        type="file"
+                        accept=".pdf,.doc,.docx,.png,.jpg,.jpeg"
                         onChange={(e) =>
                           setRentalForm((f) => ({
                             ...f,
-                            receiptNo: e.target.value,
+                            receiptFile: e.target.files?.[0] ?? null,
                           }))
                         }
                       />
@@ -448,12 +491,10 @@ export default function PaymentsPage() {
                       <TableHeader>
                         <TableRow>
                           <TableHead>Date</TableHead>
-                          <TableHead>Property</TableHead>
+                          <TableHead>House no.</TableHead>
                           <TableHead>Tenant</TableHead>
-                          <TableHead>Amount</TableHead>
-                          <TableHead>Type</TableHead>
-                          <TableHead>Month status</TableHead>
-                          <TableHead>Balance</TableHead>
+                          <TableHead className="text-right">Amount</TableHead>
+                          <TableHead>Covers</TableHead>
                           <TableHead>Method</TableHead>
                           <TableHead>Receipt</TableHead>
                         </TableRow>
@@ -461,13 +502,13 @@ export default function PaymentsPage() {
                       <TableBody>
                         {rentalQ.isLoading ? (
                           <TableRow>
-                            <TableCell colSpan={9} className="text-center py-8">
+                            <TableCell colSpan={7} className="text-center py-8">
                               Loading…
                             </TableCell>
                           </TableRow>
                         ) : rentalRows.length === 0 ? (
                           <TableRow>
-                            <TableCell colSpan={9} className="text-center py-8">
+                            <TableCell colSpan={7} className="text-center py-8">
                               No records
                             </TableCell>
                           </TableRow>
@@ -475,68 +516,50 @@ export default function PaymentsPage() {
                           rentalRows.map((p) => (
                             <TableRow key={p.id}>
                               <TableCell>
-                                {format(new Date(p.paidAt), "yyyy-MM-dd")}
+                                {format(new Date(p.paidAt), "MMM d, yyyy")}
                               </TableCell>
-                              <TableCell>
-                                {p.rental.property.code ?? "—"}
+                              <TableCell className="font-medium">
+                                {propertyLabel(p.rental.property, {
+                                  withAddress: true,
+                                })}
                               </TableCell>
                               <TableCell>{p.rental.tenant.fullName}</TableCell>
-                              <TableCell>
+                              <TableCell className="text-right whitespace-nowrap">
                                 ETB {Number(p.amount).toLocaleString()}
                               </TableCell>
-                              <TableCell>
-                                {p.kind === "deposit" ? (
-                                  <Badge
-                                    variant="outline"
-                                    className="font-normal"
-                                  >
-                                    Deposit
-                                  </Badge>
-                                ) : (
-                                  <Badge
-                                    variant="secondary"
-                                    className="font-normal"
-                                  >
-                                    Rent
-                                  </Badge>
-                                )}
-                              </TableCell>
-                              <TableCell>
-                                {p.kind === "deposit" ? (
-                                  <span className="text-muted-foreground">
-                                    Held
-                                  </span>
-                                ) : p.monthStatus === "paid" ? (
-                                  <Badge className="bg-emerald-600 hover:bg-emerald-600 font-normal">
-                                    Paid
-                                  </Badge>
-                                ) : p.monthStatus === "partial" ? (
-                                  <Badge className="bg-amber-500 hover:bg-amber-500 font-normal">
-                                    Partial
-                                  </Badge>
-                                ) : (
-                                  <Badge
-                                    variant="secondary"
-                                    className="font-normal"
-                                  >
-                                    {formatMonthRentStatus(p.monthStatus)}
-                                  </Badge>
-                                )}
-                              </TableCell>
-                              <TableCell>
-                                {p.kind === "deposit" ? (
-                                  "—"
-                                ) : (
-                                  <>
-                                    ETB{" "}
-                                    {Number(p.balanceDue ?? 0).toLocaleString()}
-                                  </>
-                                )}
+                              <TableCell className="text-sm max-w-[200px]">
+                                {p.coverageLabel ?? "—"}
                               </TableCell>
                               <TableCell>
                                 {formatPaymentMethod(p.method)}
                               </TableCell>
-                              <TableCell>{p.receiptNo ?? "—"}</TableCell>
+                              <TableCell>
+                                {p.receiptFile ? (
+                                  <Button
+                                    type="button"
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={async () => {
+                                      try {
+                                        await downloadUploadedFile(
+                                          p.receiptFile!,
+                                        );
+                                      } catch (err) {
+                                        toast({
+                                          title: "Download failed",
+                                          description: getApiErrorMessage(err),
+                                          variant: "destructive",
+                                        });
+                                      }
+                                    }}
+                                  >
+                                    <Download className="mr-1 h-3.5 w-3.5" />
+                                    View
+                                  </Button>
+                                ) : (
+                                  "—"
+                                )}
+                              </TableCell>
                             </TableRow>
                           ))
                         )}
@@ -606,7 +629,7 @@ export default function PaymentsPage() {
                         <SelectContent>
                           {(salesQ.data ?? []).map((s) => (
                             <SelectItem key={s.id} value={s.id}>
-                              {s.property.code ?? "—"} · {s.buyer.fullName}
+                              {propertyLabel(s.property)} · {s.buyer.fullName}
                             </SelectItem>
                           ))}
                         </SelectContent>
@@ -684,9 +707,9 @@ export default function PaymentsPage() {
                       <TableHeader>
                         <TableRow>
                           <TableHead>Date</TableHead>
-                          <TableHead>Property</TableHead>
+                          <TableHead>House no.</TableHead>
                           <TableHead>Buyer</TableHead>
-                          <TableHead>Amount</TableHead>
+                          <TableHead className="text-right">Amount</TableHead>
                           <TableHead>Method</TableHead>
                         </TableRow>
                       </TableHeader>
@@ -707,16 +730,20 @@ export default function PaymentsPage() {
                           saleRows.map((p) => (
                             <TableRow key={p.id}>
                               <TableCell>
-                                {format(new Date(p.paidAt), "yyyy-MM-dd")}
+                                {format(new Date(p.paidAt), "MMM d, yyyy")}
                               </TableCell>
-                              <TableCell>
-                                {p.sale.property.code ?? "—"}
+                              <TableCell className="font-medium">
+                                {propertyLabel(p.sale.property, {
+                                  withAddress: true,
+                                })}
                               </TableCell>
                               <TableCell>{p.sale.buyer.fullName}</TableCell>
-                              <TableCell>
+                              <TableCell className="text-right whitespace-nowrap">
                                 ETB {Number(p.amount).toLocaleString()}
                               </TableCell>
-                              <TableCell>{p.method}</TableCell>
+                              <TableCell>
+                                {formatPaymentMethod(p.method)}
+                              </TableCell>
                             </TableRow>
                           ))
                         )}

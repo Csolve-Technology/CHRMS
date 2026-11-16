@@ -25,7 +25,7 @@ export class SalePaymentsService {
       if (filters.to) where.paidAt.lte = new Date(filters.to);
     }
 
-    const [items, total] = await Promise.all([
+    const [rows, total] = await Promise.all([
       this.prisma.salePayment.findMany({
         where,
         orderBy: [{ paidAt: 'desc' }, { createdAt: 'desc' }],
@@ -34,7 +34,9 @@ export class SalePaymentsService {
         include: {
           sale: {
             include: {
-              property: { select: { code: true } },
+              property: {
+                select: { houseNumber: true, woreda: true, kebele: true },
+              },
               buyer: { select: { fullName: true } },
             },
           },
@@ -42,6 +44,19 @@ export class SalePaymentsService {
       }),
       this.prisma.salePayment.count({ where }),
     ]);
+
+    const items = rows.map((p) => ({
+      id: p.id,
+      amount: Number(p.amount),
+      paidAt: p.paidAt,
+      method: p.method,
+      createdAt: p.createdAt,
+      sale: {
+        id: p.sale.id,
+        property: p.sale.property,
+        buyer: p.sale.buyer,
+      },
+    }));
 
     return paginated(items, total, page, pageSize);
   }

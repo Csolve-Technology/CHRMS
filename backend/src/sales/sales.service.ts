@@ -41,7 +41,12 @@ export class SalesService {
         startDate: s.startDate,
         durationMonths: s.durationMonths,
         downPayment: Number(s.downPayment),
-        property: { id: s.property.id, code: s.property.code },
+        property: {
+          id: s.property.id,
+          houseNumber: s.property.houseNumber,
+          woreda: s.property.woreda,
+          kebele: s.property.kebele,
+        },
         buyer: { id: s.buyer.id, fullName: s.buyer.fullName },
         totalPrice: m.totalPrice,
         totalPaid: m.totalPaid,

@@ -1,4 +1,5 @@
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { api, getApiErrorMessage } from "@/services/api";
 import {
@@ -8,16 +9,6 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import {
   Table,
   TableBody,
@@ -38,635 +29,889 @@ import {
   PieChart,
   Pie,
   Cell,
+  Legend,
   LineChart,
   Line,
 } from "recharts";
 import {
-  Download,
-  FileSpreadsheet,
-  FileText,
-  TrendingUp,
+  Building2,
   Users,
-  Calendar,
-  DollarSign,
-  Clock,
-  Filter,
+  FileText,
+  CreditCard,
+  Banknote,
+  AlertTriangle,
+  Home,
+  KeyRound,
 } from "lucide-react";
-import {
-  format,
-  subDays,
-  startOfWeek,
-  endOfWeek,
-  startOfMonth,
-  endOfMonth,
-} from "date-fns";
+import { format } from "date-fns";
+import { propertyLabel } from "@/lib/property-label";
+import { formatPaymentMethod } from "@/lib/rental-labels";
+
+type NameValue = { name: string; value: number };
+
+type ReportsOverview = {
+  generatedAt: string;
+  summary: {
+    total_properties: number;
+    available: number;
+    rented: number;
+    sold: number;
+    maintenance: number;
+    total_revenue: number;
+    outstanding_balance: number;
+    total_tenants: number;
+    active_tenants: number;
+    inactive_tenants: number;
+    total_rentals: number;
+    active_rentals: number;
+    ended_rentals: number;
+    total_sales: number;
+    active_sales: number;
+    completed_sales: number;
+    rental_revenue: number;
+    sale_revenue: number;
+    deposit_held: number;
+    rent_expected_this_month: number;
+    rent_paid_this_month: number;
+    rent_outstanding_this_month: number;
+  };
+  charts: {
+    properties_by_status: NameValue[];
+    properties_by_type: NameValue[];
+    properties_by_woreda: NameValue[];
+    rentals_by_status: NameValue[];
+    sales_by_status: NameValue[];
+    tenants_by_status: NameValue[];
+    rent_collection_this_month: NameValue[];
+    monthly_revenue: {
+      month: string;
+      rental: number;
+      sale: number;
+      total: number;
+    }[];
+    payment_methods: { method: string; amount: number }[];
+    sales_progress: NameValue[];
+  };
+  tables: {
+    top_rental_balances: {
+      id: string;
+      houseNumber: string;
+      woreda: string;
+      kebele: string;
+      tenant: string;
+      monthlyRent: number;
+      outstanding: number;
+      monthStatus: string;
+    }[];
+    top_sale_balances: {
+      id: string;
+      houseNumber: string;
+      woreda: string;
+      kebele: string;
+      buyer: string;
+      totalPrice: number;
+      paid: number;
+      remaining: number;
+      completionPercentage: number;
+      status: string;
+    }[];
+    recent_rental_payments: {
+      id: string;
+      amount: number;
+      paidAt: string;
+      method: string;
+      houseNumber: string;
+      person: string;
+    }[];
+    recent_sale_payments: {
+      id: string;
+      amount: number;
+      paidAt: string;
+      method: string;
+      houseNumber: string;
+      person: string;
+    }[];
+  };
+};
+
+const STATUS_COLORS: Record<string, string> = {
+  available: "#10b981",
+  rented: "#3b82f6",
+  sold: "#8b5cf6",
+  maintenance: "#f59e0b",
+  active: "#3b82f6",
+  inactive: "#94a3b8",
+  ended: "#64748b",
+  completed: "#10b981",
+  cancelled: "#ef4444",
+  Paid: "#10b981",
+  Partial: "#f59e0b",
+  Unpaid: "#94a3b8",
+  Overdue: "#ef4444",
+  "Not due": "#cbd5e1",
+  "In progress": "#3b82f6",
+  "Fully paid": "#10b981",
+};
+
+const CHART_PALETTE = [
+  "#3b82f6",
+  "#10b981",
+  "#f59e0b",
+  "#8b5cf6",
+  "#ef4444",
+  "#06b6d4",
+  "#84cc16",
+  "#f97316",
+];
+
+function etb(n: number | undefined | null) {
+  return `ETB ${Number(n ?? 0).toLocaleString()}`;
+}
+
+function colorFor(name: string, index: number) {
+  return STATUS_COLORS[name] ?? CHART_PALETTE[index % CHART_PALETTE.length];
+}
+
+function StatCard({
+  title,
+  value,
+  hint,
+  icon: Icon,
+}: {
+  title: string;
+  value: React.ReactNode;
+  hint?: string;
+  icon: React.ComponentType<{ className?: string }>;
+}) {
+  return (
+    <Card>
+      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+        <CardTitle className="text-sm font-medium">{title}</CardTitle>
+        <Icon className="h-4 w-4 text-muted-foreground" />
+      </CardHeader>
+      <CardContent>
+        <div className="text-2xl font-bold">{value}</div>
+        {hint ? (
+          <p className="text-xs text-muted-foreground mt-1">{hint}</p>
+        ) : null}
+      </CardContent>
+    </Card>
+  );
+}
+
+function EmptyChart({ label }: { label: string }) {
+  return (
+    <div className="flex h-[280px] items-center justify-center text-sm text-muted-foreground">
+      {label}
+    </div>
+  );
+}
 
 export default function ReportsPage() {
-  const chrmsSummary = useQuery({
-    queryKey: ["reports-summary"],
+  const [tab, setTab] = useState("overview");
+
+  const reportQ = useQuery({
+    queryKey: ["reports-overview"],
     queryFn: async () => {
-      const res = await api.get<{
-        total_properties: number;
-        rented: number;
-        sold: number;
-        total_revenue: number;
-        outstanding_balance: number;
-      }>("/reports/summary");
+      const res = await api.get<ReportsOverview>("/reports/overview");
       return res.data;
     },
   });
 
-  const [activeTab, setActiveTab] = useState("overview");
-  const [dateRange, setDateRange] = useState("this-month");
-  const [department, setDepartment] = useState("all");
-  const [reportType, setReportType] = useState("summary");
+  const data = reportQ.data;
+  const s = data?.summary;
+  const charts = data?.charts;
+  const tables = data?.tables;
 
-  // Mock data for reports
-  const attendanceData = [
-    { name: "Mon", present: 45, absent: 5, late: 2 },
-    { name: "Tue", present: 48, absent: 2, late: 1 },
-    { name: "Wed", present: 47, absent: 3, late: 3 },
-    { name: "Thu", present: 46, absent: 4, late: 2 },
-    { name: "Fri", present: 44, absent: 6, late: 4 },
-  ];
-
-  const leaveData = [
-    { name: "Annual Leave", value: 65, color: "#8884d8" },
-    { name: "Sick Leave", value: 25, color: "#82ca9d" },
-    { name: "Personal Leave", value: 15, color: "#ffc658" },
-    { name: "Maternity Leave", value: 8, color: "#ff7300" },
-  ];
-
-  const payrollData = [
-    { month: "Jan", gross: 450000, net: 360000, taxes: 90000 },
-    { month: "Feb", gross: 465000, net: 372000, taxes: 93000 },
-    { month: "Mar", gross: 478000, net: 382400, taxes: 95600 },
-    { month: "Apr", gross: 485000, net: 388000, taxes: 97000 },
-    { month: "May", gross: 492000, net: 393600, taxes: 98400 },
-    { month: "Jun", gross: 501000, net: 400800, taxes: 100200 },
-  ];
-
-  const timesheetData = [
-    {
-      employee: "John Doe",
-      regularHours: 160,
-      overtimeHours: 12,
-      totalHours: 172,
-    },
-    {
-      employee: "Jane Smith",
-      regularHours: 160,
-      overtimeHours: 8,
-      totalHours: 168,
-    },
-    {
-      employee: "Alice Johnson",
-      regularHours: 152,
-      overtimeHours: 5,
-      totalHours: 157,
-    },
-    {
-      employee: "Bob Wilson",
-      regularHours: 160,
-      overtimeHours: 15,
-      totalHours: 175,
-    },
-    {
-      employee: "Carol Brown",
-      regularHours: 158,
-      overtimeHours: 3,
-      totalHours: 161,
-    },
-  ];
-
-  const departmentStats = [
-    { department: "Engineering", employees: 25, avgSalary: 95000, turnover: 5 },
-    { department: "Sales", employees: 15, avgSalary: 75000, turnover: 8 },
-    { department: "Marketing", employees: 12, avgSalary: 70000, turnover: 3 },
-    { department: "HR", employees: 8, avgSalary: 65000, turnover: 2 },
-    { department: "Finance", employees: 10, avgSalary: 80000, turnover: 1 },
-  ];
-
-  const handleExportReport = (format: "excel" | "pdf") => {
-    // addNotification({
-    //   title: "Export Started",
-    //   message: `Your ${format.toUpperCase()} report is being generated`,
-    //   type: "info",
-    // });
-
-    // // Simulate export process
-    // setTimeout(() => {
-    //   addNotification({
-    //     title: "Export Complete",
-    //     message: `Your ${format.toUpperCase()} report has been downloaded`,
-    //     type: "success",
-    //   });
-    // }, 2000);
-  };
-
-  const getDateRangeText = () => {
-    const now = new Date();
-    switch (dateRange) {
-      case "this-week":
-        return `${format(startOfWeek(now), "MMM dd")} - ${format(
-          endOfWeek(now),
-          "MMM dd, yyyy"
-        )}`;
-      case "this-month":
-        return `${format(startOfMonth(now), "MMM dd")} - ${format(
-          endOfMonth(now),
-          "MMM dd, yyyy"
-        )}`;
-      case "last-30-days":
-        return `${format(subDays(now, 30), "MMM dd")} - ${format(
-          now,
-          "MMM dd, yyyy"
-        )}`;
-      case "last-90-days":
-        return `${format(subDays(now, 90), "MMM dd")} - ${format(
-          now,
-          "MMM dd, yyyy"
-        )}`;
-      default:
-        return "Custom Range";
-    }
-  };
+  const methodChart = useMemo(
+    () =>
+      (charts?.payment_methods ?? []).map((row) => ({
+        name: formatPaymentMethod(row.method),
+        value: row.amount,
+      })),
+    [charts?.payment_methods],
+  );
 
   return (
-    <div className="space-y-6 p-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">
-            Reports & Analytics
-          </h1>
-          <p className="text-muted-foreground">
-            Comprehensive reports and insights for HR operations
-          </p>
-        </div>
-        <div className="flex gap-2">
-          <Button variant="outline" onClick={() => handleExportReport("excel")}>
-            <FileSpreadsheet className="mr-2 h-4 w-4" />
-            Export Excel
-          </Button>
-          <Button variant="outline" onClick={() => handleExportReport("pdf")}>
-            <FileText className="mr-2 h-4 w-4" />
-            Export PDF
-          </Button>
-        </div>
+    <div className="space-y-6">
+      <div>
+        <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">
+          Reports & analytics
+        </h1>
+        <p className="text-muted-foreground text-sm mt-1">
+          Live stats from properties, tenants, rent/sale agreements, and
+          payments
+          {data?.generatedAt
+            ? ` · Updated ${format(new Date(data.generatedAt), "MMM d, yyyy HH:mm")}`
+            : ""}
+        </p>
       </div>
 
-      <Card className="border-blue-100 bg-blue-50/40">
-        <CardHeader>
-          <CardTitle className="text-lg">CHRMS — live summary</CardTitle>
-          <CardDescription>
-            From <code className="text-xs">GET /reports/summary</code> (housing
-            module)
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="text-sm">
-          {chrmsSummary.isLoading ? (
-            <p className="text-muted-foreground">Loading…</p>
-          ) : chrmsSummary.error ? (
-            <p className="text-destructive">{getApiErrorMessage(chrmsSummary.error)}</p>
-          ) : chrmsSummary.data ? (
-            <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-              <div>
-                <p className="text-muted-foreground">Properties</p>
-                <p className="text-xl font-semibold">
-                  {chrmsSummary.data.total_properties}
-                </p>
-              </div>
-              <div>
-                <p className="text-muted-foreground">Rented</p>
-                <p className="text-xl font-semibold">{chrmsSummary.data.rented}</p>
-              </div>
-              <div>
-                <p className="text-muted-foreground">Sold</p>
-                <p className="text-xl font-semibold">{chrmsSummary.data.sold}</p>
-              </div>
-              <div>
-                <p className="text-muted-foreground">Revenue</p>
-                <p className="text-xl font-semibold">
-                  ETB {chrmsSummary.data.total_revenue.toLocaleString()}
-                </p>
-              </div>
-              <div>
-                <p className="text-muted-foreground">Outstanding</p>
-                <p className="text-xl font-semibold text-amber-800">
-                  ETB {chrmsSummary.data.outstanding_balance.toLocaleString()}
-                </p>
-              </div>
-            </div>
-          ) : null}
-        </CardContent>
-      </Card>
+      {reportQ.error ? (
+        <Card className="border-destructive">
+          <CardHeader>
+            <CardTitle className="text-base flex items-center gap-2">
+              <AlertTriangle className="h-4 w-4 text-destructive" />
+              Could not load reports
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="text-sm text-muted-foreground">
+            {getApiErrorMessage(reportQ.error)}
+          </CardContent>
+        </Card>
+      ) : null}
 
-      {/* Filters */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Filter className="h-5 w-5" />
-            Report Filters
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            <div>
-              <Label htmlFor="date-range">Date Range</Label>
-              <Select value={dateRange} onValueChange={setDateRange}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="this-week">This Week</SelectItem>
-                  <SelectItem value="this-month">This Month</SelectItem>
-                  <SelectItem value="last-30-days">Last 30 Days</SelectItem>
-                  <SelectItem value="last-90-days">Last 90 Days</SelectItem>
-                  <SelectItem value="custom">Custom Range</SelectItem>
-                </SelectContent>
-              </Select>
-              <div className="text-sm text-muted-foreground mt-1">
-                {getDateRangeText()}
-              </div>
-            </div>
-            <div>
-              <Label htmlFor="department">Department</Label>
-              <Select value={department} onValueChange={setDepartment}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Departments</SelectItem>
-                  <SelectItem value="engineering">Engineering</SelectItem>
-                  <SelectItem value="sales">Sales</SelectItem>
-                  <SelectItem value="marketing">Marketing</SelectItem>
-                  <SelectItem value="hr">HR</SelectItem>
-                  <SelectItem value="finance">Finance</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
-              <Label htmlFor="report-type">Report Type</Label>
-              <Select value={reportType} onValueChange={setReportType}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="summary">Summary</SelectItem>
-                  <SelectItem value="detailed">Detailed</SelectItem>
-                  <SelectItem value="comparative">Comparative</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="flex items-end">
-              <Button className="w-full">
-                <TrendingUp className="mr-2 h-4 w-4" />
-                Generate Report
-              </Button>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <StatCard
+          title="Properties"
+          value={reportQ.isLoading ? "—" : (s?.total_properties ?? 0)}
+          hint={
+            s
+              ? `${s.available} available · ${s.rented} rented · ${s.sold} sold`
+              : undefined
+          }
+          icon={Building2}
+        />
+        <StatCard
+          title="Tenants"
+          value={reportQ.isLoading ? "—" : (s?.total_tenants ?? 0)}
+          hint={s ? `${s.active_tenants} active` : undefined}
+          icon={Users}
+        />
+        <StatCard
+          title="Active rentals"
+          value={reportQ.isLoading ? "—" : (s?.active_rentals ?? 0)}
+          hint={s ? `${s.total_rentals} total agreements` : undefined}
+          icon={KeyRound}
+        />
+        <StatCard
+          title="Total revenue"
+          value={reportQ.isLoading ? "—" : etb(s?.total_revenue)}
+          hint={
+            s
+              ? `Rent ${etb(s.rental_revenue)} · Sales ${etb(s.sale_revenue)}`
+              : undefined
+          }
+          icon={Banknote}
+        />
+      </div>
 
-      {/* Report Tabs */}
-      <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="grid grid-cols-5 w-full">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+        <StatCard
+          title="Rent collected this month"
+          value={reportQ.isLoading ? "—" : etb(s?.rent_paid_this_month)}
+          hint={
+            s
+              ? `Expected ${etb(s.rent_expected_this_month)} · Due ${etb(s.rent_outstanding_this_month)}`
+              : undefined
+          }
+          icon={CreditCard}
+        />
+        <StatCard
+          title="Outstanding balance"
+          value={reportQ.isLoading ? "—" : etb(s?.outstanding_balance)}
+          hint="Current rent shortfall + unpaid sale balances"
+          icon={AlertTriangle}
+        />
+        <StatCard
+          title="Sales"
+          value={reportQ.isLoading ? "—" : (s?.total_sales ?? 0)}
+          hint={
+            s
+              ? `${s.active_sales} active · ${s.completed_sales} completed`
+              : undefined
+          }
+          icon={FileText}
+        />
+      </div>
+
+      <Tabs value={tab} onValueChange={setTab}>
+        <TabsList className="grid w-full grid-cols-2 sm:grid-cols-4 h-auto">
           <TabsTrigger value="overview">Overview</TabsTrigger>
-          <TabsTrigger value="attendance">Attendance</TabsTrigger>
-          <TabsTrigger value="leaves">Leaves</TabsTrigger>
-          <TabsTrigger value="payroll">Payroll</TabsTrigger>
-          <TabsTrigger value="timesheets">Timesheets</TabsTrigger>
+          <TabsTrigger value="properties">Properties</TabsTrigger>
+          <TabsTrigger value="rentals">Rent & sell</TabsTrigger>
+          <TabsTrigger value="payments">Payments</TabsTrigger>
         </TabsList>
 
-        <TabsContent value="overview" className="space-y-6">
-          {/* Key Metrics */}
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">
-                  Total Employees
-                </CardTitle>
-                <Users className="h-4 w-4 text-muted-foreground" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">247</div>
-                <p className="text-xs text-muted-foreground">
-                  +5 from last month
-                </p>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">
-                  Attendance Rate
-                </CardTitle>
-                <Calendar className="h-4 w-4 text-muted-foreground" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">94.2%</div>
-                <p className="text-xs text-muted-foreground">
-                  +2.1% from last month
-                </p>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">
-                  Total Payroll
-                </CardTitle>
-                <DollarSign className="h-4 w-4 text-muted-foreground" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">$501K</div>
-                <p className="text-xs text-muted-foreground">
-                  +3.2% from last month
-                </p>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">
-                  Avg. Hours/Week
-                </CardTitle>
-                <Clock className="h-4 w-4 text-muted-foreground" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">42.3</div>
-                <p className="text-xs text-muted-foreground">
-                  +0.8 from last month
-                </p>
-              </CardContent>
-            </Card>
-          </div>
-
-          {/* Department Overview */}
-          <Card>
-            <CardHeader>
-              <CardTitle>Department Overview</CardTitle>
-              <CardDescription>
-                Employee distribution and key metrics by department
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Department</TableHead>
-                    <TableHead>Employees</TableHead>
-                    <TableHead>Avg. Salary</TableHead>
-                    <TableHead>Turnover Rate</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {departmentStats.map((dept) => (
-                    <TableRow key={dept.department}>
-                      <TableCell className="font-medium">
-                        {dept.department}
-                      </TableCell>
-                      <TableCell>{dept.employees}</TableCell>
-                      <TableCell>${dept.avgSalary.toLocaleString()}</TableCell>
-                      <TableCell>{dept.turnover}%</TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="attendance" className="space-y-6">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <TabsContent value="overview" className="space-y-4 mt-4">
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
             <Card>
               <CardHeader>
-                <CardTitle>Weekly Attendance</CardTitle>
+                <CardTitle>Monthly revenue</CardTitle>
                 <CardDescription>
-                  Attendance patterns for the current week
+                  Rental vs sale receipts — last 12 months
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                <ResponsiveContainer width="100%" height={300}>
-                  <BarChart data={attendanceData}>
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="name" />
-                    <YAxis />
-                    <Tooltip />
-                    <Bar dataKey="present" fill="#10b981" name="Present" />
-                    <Bar dataKey="absent" fill="#ef4444" name="Absent" />
-                    <Bar dataKey="late" fill="#f59e0b" name="Late" />
-                  </BarChart>
-                </ResponsiveContainer>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <CardTitle>Attendance Summary</CardTitle>
-                <CardDescription>Key attendance metrics</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="flex justify-between items-center">
-                  <span className="text-sm font-medium">Present</span>
-                  <span className="text-sm font-bold text-green-600">
-                    230 (94.2%)
-                  </span>
-                </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-sm font-medium">Absent</span>
-                  <span className="text-sm font-bold text-red-600">
-                    12 (4.9%)
-                  </span>
-                </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-sm font-medium">Late</span>
-                  <span className="text-sm font-bold text-yellow-600">
-                    8 (3.3%)
-                  </span>
-                </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-sm font-medium">On Leave</span>
-                  <span className="text-sm font-bold text-blue-600">
-                    5 (2.0%)
-                  </span>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-        </TabsContent>
-
-        <TabsContent value="leaves" className="space-y-6">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <Card>
-              <CardHeader>
-                <CardTitle>Leave Distribution</CardTitle>
-                <CardDescription>
-                  Types of leaves taken this month
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <ResponsiveContainer width="100%" height={300}>
-                  <PieChart>
-                    <Pie
-                      data={leaveData}
-                      cx="50%"
-                      cy="50%"
-                      labelLine={false}
-                      label={({ name, percent }) =>
-                        `${name} ${(percent * 100).toFixed(0)}%`
-                      }
-                      outerRadius={80}
-                      fill="#8884d8"
-                      dataKey="value"
-                    >
-                      {leaveData.map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={entry.color} />
-                      ))}
-                    </Pie>
-                    <Tooltip />
-                  </PieChart>
-                </ResponsiveContainer>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <CardTitle>Leave Statistics</CardTitle>
-                <CardDescription>Monthly leave summary</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                {leaveData.map((leave) => (
-                  <div
-                    key={leave.name}
-                    className="flex justify-between items-center"
-                  >
-                    <div className="flex items-center gap-2">
-                      <div
-                        className="w-3 h-3 rounded-full"
-                        style={{ backgroundColor: leave.color }}
+                {(charts?.monthly_revenue?.length ?? 0) === 0 ? (
+                  <EmptyChart label="No payment history yet" />
+                ) : (
+                  <ResponsiveContainer width="100%" height={300}>
+                    <BarChart data={charts?.monthly_revenue}>
+                      <CartesianGrid strokeDasharray="3 3" />
+                      <XAxis dataKey="month" tick={{ fontSize: 11 }} />
+                      <YAxis tick={{ fontSize: 11 }} />
+                      <Tooltip
+                        formatter={(v) => etb(Number(v))}
+                        labelStyle={{ fontWeight: 600 }}
                       />
-                      <span className="text-sm font-medium">{leave.name}</span>
-                    </div>
-                    <span className="text-sm font-bold">
-                      {leave.value} days
-                    </span>
-                  </div>
-                ))}
-                <div className="pt-4 border-t">
-                  <div className="flex justify-between items-center">
-                    <span className="text-sm font-medium">
-                      Total Leave Days
-                    </span>
-                    <span className="text-sm font-bold">
-                      {leaveData.reduce(
-                        (total, leave) => total + leave.value,
-                        0
-                      )}{" "}
-                      days
-                    </span>
-                  </div>
-                </div>
+                      <Legend />
+                      <Bar
+                        dataKey="rental"
+                        name="Rent"
+                        fill="#3b82f6"
+                        stackId="a"
+                      />
+                      <Bar
+                        dataKey="sale"
+                        name="Sale"
+                        fill="#10b981"
+                        stackId="a"
+                      />
+                    </BarChart>
+                  </ResponsiveContainer>
+                )}
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle>Revenue trend</CardTitle>
+                <CardDescription>Total cash collected by month</CardDescription>
+              </CardHeader>
+              <CardContent>
+                {(charts?.monthly_revenue?.length ?? 0) === 0 ? (
+                  <EmptyChart label="No payment history yet" />
+                ) : (
+                  <ResponsiveContainer width="100%" height={300}>
+                    <LineChart data={charts?.monthly_revenue}>
+                      <CartesianGrid strokeDasharray="3 3" />
+                      <XAxis dataKey="month" tick={{ fontSize: 11 }} />
+                      <YAxis tick={{ fontSize: 11 }} />
+                      <Tooltip formatter={(v) => etb(Number(v))} />
+                      <Line
+                        type="monotone"
+                        dataKey="total"
+                        name="Total"
+                        stroke="#8b5cf6"
+                        strokeWidth={2}
+                        dot={false}
+                      />
+                    </LineChart>
+                  </ResponsiveContainer>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+            <Card>
+              <CardHeader>
+                <CardTitle>Property status</CardTitle>
+              </CardHeader>
+              <CardContent>
+                {(charts?.properties_by_status?.length ?? 0) === 0 ? (
+                  <EmptyChart label="No properties" />
+                ) : (
+                  <ResponsiveContainer width="100%" height={260}>
+                    <PieChart>
+                      <Pie
+                        data={charts?.properties_by_status}
+                        dataKey="value"
+                        nameKey="name"
+                        cx="50%"
+                        cy="50%"
+                        outerRadius={80}
+                        label={({ name, value }) => `${name}: ${value}`}
+                      >
+                        {charts?.properties_by_status.map((entry, i) => (
+                          <Cell
+                            key={entry.name}
+                            fill={colorFor(entry.name, i)}
+                          />
+                        ))}
+                      </Pie>
+                      <Tooltip />
+                    </PieChart>
+                  </ResponsiveContainer>
+                )}
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle>This month’s rent</CardTitle>
+                <CardDescription>Active leases by collection status</CardDescription>
+              </CardHeader>
+              <CardContent>
+                {(charts?.rent_collection_this_month?.length ?? 0) === 0 ? (
+                  <EmptyChart label="No active rentals" />
+                ) : (
+                  <ResponsiveContainer width="100%" height={260}>
+                    <PieChart>
+                      <Pie
+                        data={charts?.rent_collection_this_month}
+                        dataKey="value"
+                        nameKey="name"
+                        cx="50%"
+                        cy="50%"
+                        outerRadius={80}
+                        label={({ name, value }) => `${name}: ${value}`}
+                      >
+                        {charts?.rent_collection_this_month.map((entry, i) => (
+                          <Cell
+                            key={entry.name}
+                            fill={colorFor(entry.name, i)}
+                          />
+                        ))}
+                      </Pie>
+                      <Tooltip />
+                    </PieChart>
+                  </ResponsiveContainer>
+                )}
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle>Payment methods</CardTitle>
+                <CardDescription>All recorded receipts</CardDescription>
+              </CardHeader>
+              <CardContent>
+                {methodChart.length === 0 ? (
+                  <EmptyChart label="No payments yet" />
+                ) : (
+                  <ResponsiveContainer width="100%" height={260}>
+                    <BarChart data={methodChart} layout="vertical">
+                      <CartesianGrid strokeDasharray="3 3" />
+                      <XAxis type="number" tick={{ fontSize: 11 }} />
+                      <YAxis
+                        type="category"
+                        dataKey="name"
+                        width={90}
+                        tick={{ fontSize: 11 }}
+                      />
+                      <Tooltip formatter={(v) => etb(Number(v))} />
+                      <Bar dataKey="value" name="Amount" fill="#06b6d4" />
+                    </BarChart>
+                  </ResponsiveContainer>
+                )}
               </CardContent>
             </Card>
           </div>
         </TabsContent>
 
-        <TabsContent value="payroll" className="space-y-6">
+        <TabsContent value="properties" className="space-y-4 mt-4">
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+            <Card>
+              <CardHeader>
+                <CardTitle>By city</CardTitle>
+                <CardDescription>Inventory distribution</CardDescription>
+              </CardHeader>
+              <CardContent>
+                {(charts?.properties_by_woreda?.length ?? 0) === 0 ? (
+                  <EmptyChart label="No properties" />
+                ) : (
+                  <ResponsiveContainer width="100%" height={300}>
+                    <BarChart data={charts?.properties_by_woreda}>
+                      <CartesianGrid strokeDasharray="3 3" />
+                      <XAxis dataKey="name" tick={{ fontSize: 11 }} />
+                      <YAxis allowDecimals={false} />
+                      <Tooltip />
+                      <Bar dataKey="value" name="Properties" fill="#3b82f6" />
+                    </BarChart>
+                  </ResponsiveContainer>
+                )}
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle>By type</CardTitle>
+                <CardDescription>Residential vs commercial</CardDescription>
+              </CardHeader>
+              <CardContent>
+                {(charts?.properties_by_type?.length ?? 0) === 0 ? (
+                  <EmptyChart label="No properties" />
+                ) : (
+                  <ResponsiveContainer width="100%" height={300}>
+                    <PieChart>
+                      <Pie
+                        data={charts?.properties_by_type}
+                        dataKey="value"
+                        nameKey="name"
+                        cx="50%"
+                        cy="50%"
+                        outerRadius={90}
+                        label={({ name, value }) => `${name}: ${value}`}
+                      >
+                        {charts?.properties_by_type.map((entry, i) => (
+                          <Cell
+                            key={entry.name}
+                            fill={colorFor(entry.name, i)}
+                          />
+                        ))}
+                      </Pie>
+                      <Tooltip />
+                      <Legend />
+                    </PieChart>
+                  </ResponsiveContainer>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <StatCard
+              title="Available"
+              value={s?.available ?? 0}
+              icon={Home}
+            />
+            <StatCard title="Rented" value={s?.rented ?? 0} icon={KeyRound} />
+            <StatCard title="Sold" value={s?.sold ?? 0} icon={FileText} />
+            <StatCard
+              title="Maintenance"
+              value={s?.maintenance ?? 0}
+              icon={AlertTriangle}
+            />
+          </div>
+
           <Card>
             <CardHeader>
-              <CardTitle>Payroll Trends</CardTitle>
-              <CardDescription>
-                Monthly payroll expenses over time
-              </CardDescription>
+              <CardTitle>Tenants</CardTitle>
+              <CardDescription>Directory status</CardDescription>
             </CardHeader>
             <CardContent>
-              <ResponsiveContainer width="100%" height={400}>
-                <LineChart data={payrollData}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="month" />
-                  <YAxis />
-                  <Tooltip
-                    formatter={(value) => [
-                      `$${Number(value).toLocaleString()}`,
-                      "",
-                    ]}
-                  />
-                  <Line
-                    type="monotone"
-                    dataKey="gross"
-                    stroke="#8884d8"
-                    strokeWidth={2}
-                    name="Gross Pay"
-                  />
-                  <Line
-                    type="monotone"
-                    dataKey="net"
-                    stroke="#82ca9d"
-                    strokeWidth={2}
-                    name="Net Pay"
-                  />
-                  <Line
-                    type="monotone"
-                    dataKey="taxes"
-                    stroke="#ffc658"
-                    strokeWidth={2}
-                    name="Taxes"
-                  />
-                </LineChart>
-              </ResponsiveContainer>
+              {(charts?.tenants_by_status?.length ?? 0) === 0 ? (
+                <p className="text-sm text-muted-foreground">No tenants yet</p>
+              ) : (
+                <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
+                  {charts?.tenants_by_status.map((row) => (
+                    <div key={row.name}>
+                      <p className="text-sm text-muted-foreground capitalize">
+                        {row.name}
+                      </p>
+                      <p className="text-xl font-semibold">{row.value}</p>
+                    </div>
+                  ))}
+                  <div>
+                    <p className="text-sm text-muted-foreground">Total</p>
+                    <p className="text-xl font-semibold">
+                      {s?.total_tenants ?? 0}
+                    </p>
+                  </div>
+                </div>
+              )}
             </CardContent>
           </Card>
         </TabsContent>
 
-        <TabsContent value="timesheets" className="space-y-6">
+        <TabsContent value="rentals" className="space-y-4 mt-4">
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+            <Card>
+              <CardHeader>
+                <CardTitle>Rental agreements</CardTitle>
+              </CardHeader>
+              <CardContent>
+                {(charts?.rentals_by_status?.length ?? 0) === 0 ? (
+                  <EmptyChart label="No rentals" />
+                ) : (
+                  <ResponsiveContainer width="100%" height={260}>
+                    <BarChart data={charts?.rentals_by_status}>
+                      <CartesianGrid strokeDasharray="3 3" />
+                      <XAxis dataKey="name" tick={{ fontSize: 11 }} />
+                      <YAxis allowDecimals={false} />
+                      <Tooltip />
+                      <Bar dataKey="value" name="Agreements">
+                        {charts?.rentals_by_status.map((entry, i) => (
+                          <Cell
+                            key={entry.name}
+                            fill={colorFor(entry.name, i)}
+                          />
+                        ))}
+                      </Bar>
+                    </BarChart>
+                  </ResponsiveContainer>
+                )}
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle>Sale agreements</CardTitle>
+              </CardHeader>
+              <CardContent>
+                {(charts?.sales_progress?.length ?? 0) === 0 &&
+                (charts?.sales_by_status?.length ?? 0) === 0 ? (
+                  <EmptyChart label="No sales" />
+                ) : (
+                  <ResponsiveContainer width="100%" height={260}>
+                    <PieChart>
+                      <Pie
+                        data={
+                          (charts?.sales_progress?.length ?? 0) > 0
+                            ? charts?.sales_progress
+                            : charts?.sales_by_status
+                        }
+                        dataKey="value"
+                        nameKey="name"
+                        cx="50%"
+                        cy="50%"
+                        outerRadius={80}
+                        label={({ name, value }) => `${name}: ${value}`}
+                      >
+                        {(
+                          ((charts?.sales_progress?.length ?? 0) > 0
+                            ? charts?.sales_progress
+                            : charts?.sales_by_status) ?? []
+                        ).map((entry, i) => (
+                          <Cell
+                            key={entry.name}
+                            fill={colorFor(entry.name, i)}
+                          />
+                        ))}
+                      </Pie>
+                      <Tooltip />
+                      <Legend />
+                    </PieChart>
+                  </ResponsiveContainer>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+
           <Card>
             <CardHeader>
-              <CardTitle>Employee Hours Summary</CardTitle>
+              <CardTitle>Highest rental balances</CardTitle>
               <CardDescription>
-                Hours worked by employees this month
+                Active leases with outstanding rent (deposits excluded)
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Employee</TableHead>
-                    <TableHead>Regular Hours</TableHead>
-                    <TableHead>Overtime Hours</TableHead>
-                    <TableHead>Total Hours</TableHead>
-                    <TableHead>Utilization</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {timesheetData.map((employee) => (
-                    <TableRow key={employee.employee}>
-                      <TableCell className="font-medium">
-                        {employee.employee}
-                      </TableCell>
-                      <TableCell>{employee.regularHours}h</TableCell>
-                      <TableCell>{employee.overtimeHours}h</TableCell>
-                      <TableCell className="font-bold">
-                        {employee.totalHours}h
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex items-center gap-2">
-                          <div className="w-full bg-gray-200 rounded-full h-2">
-                            <div
-                              className="bg-blue-600 h-2 rounded-full"
-                              style={{
-                                width: `${(employee.totalHours / 180) * 100}%`,
-                              }}
-                            />
-                          </div>
-                          <span className="text-sm font-medium">
-                            {Math.round((employee.totalHours / 180) * 100)}%
-                          </span>
-                        </div>
-                      </TableCell>
+              <div className="rounded-md border overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>House no.</TableHead>
+                      <TableHead>Tenant</TableHead>
+                      <TableHead className="text-right">Monthly</TableHead>
+                      <TableHead className="text-right">Outstanding</TableHead>
+                      <TableHead>Month</TableHead>
                     </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
+                  </TableHeader>
+                  <TableBody>
+                    {(tables?.top_rental_balances?.length ?? 0) === 0 ? (
+                      <TableRow>
+                        <TableCell
+                          colSpan={5}
+                          className="text-center text-muted-foreground py-8"
+                        >
+                          No outstanding rental balances
+                        </TableCell>
+                      </TableRow>
+                    ) : (
+                      tables?.top_rental_balances.map((row) => (
+                        <TableRow key={row.id}>
+                          <TableCell className="font-medium">
+                            <Link
+                              className="hover:underline"
+                              to={`/housing/rental/${row.id}`}
+                            >
+                              {propertyLabel(row, { withAddress: true })}
+                            </Link>
+                          </TableCell>
+                          <TableCell>{row.tenant}</TableCell>
+                          <TableCell className="text-right">
+                            {etb(row.monthlyRent)}
+                          </TableCell>
+                          <TableCell className="text-right text-amber-700">
+                            {etb(row.outstanding)}
+                          </TableCell>
+                          <TableCell className="capitalize">
+                            {row.monthStatus.replace("_", " ")}
+                          </TableCell>
+                        </TableRow>
+                      ))
+                    )}
+                  </TableBody>
+                </Table>
+              </div>
             </CardContent>
           </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Highest sale balances</CardTitle>
+              <CardDescription>Installment sales still owing</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="rounded-md border overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>House no.</TableHead>
+                      <TableHead>Buyer</TableHead>
+                      <TableHead className="text-right">Total</TableHead>
+                      <TableHead className="text-right">Paid</TableHead>
+                      <TableHead className="text-right">Remaining</TableHead>
+                      <TableHead className="text-right">Progress</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {(tables?.top_sale_balances?.length ?? 0) === 0 ? (
+                      <TableRow>
+                        <TableCell
+                          colSpan={6}
+                          className="text-center text-muted-foreground py-8"
+                        >
+                          No outstanding sale balances
+                        </TableCell>
+                      </TableRow>
+                    ) : (
+                      tables?.top_sale_balances.map((row) => (
+                        <TableRow key={row.id}>
+                          <TableCell className="font-medium">
+                            <Link
+                              className="hover:underline"
+                              to={`/housing/sale/${row.id}`}
+                            >
+                              {propertyLabel(row, { withAddress: true })}
+                            </Link>
+                          </TableCell>
+                          <TableCell>{row.buyer}</TableCell>
+                          <TableCell className="text-right">
+                            {etb(row.totalPrice)}
+                          </TableCell>
+                          <TableCell className="text-right text-emerald-700">
+                            {etb(row.paid)}
+                          </TableCell>
+                          <TableCell className="text-right text-amber-700">
+                            {etb(row.remaining)}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            {row.completionPercentage.toFixed(0)}%
+                          </TableCell>
+                        </TableRow>
+                      ))
+                    )}
+                  </TableBody>
+                </Table>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="payments" className="space-y-4 mt-4">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+            <StatCard
+              title="Rental receipts"
+              value={etb(s?.rental_revenue)}
+              hint={s ? `Deposits held ${etb(s.deposit_held)}` : undefined}
+              icon={CreditCard}
+            />
+            <StatCard
+              title="Sale receipts"
+              value={etb(s?.sale_revenue)}
+              icon={Banknote}
+            />
+            <StatCard
+              title="Combined"
+              value={etb(s?.total_revenue)}
+              icon={Building2}
+            />
+          </div>
+
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+            <Card>
+              <CardHeader>
+                <CardTitle>Recent rent payments</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="rounded-md border overflow-x-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Date</TableHead>
+                        <TableHead>House</TableHead>
+                        <TableHead>Tenant</TableHead>
+                        <TableHead className="text-right">Amount</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {(tables?.recent_rental_payments?.length ?? 0) === 0 ? (
+                        <TableRow>
+                          <TableCell
+                            colSpan={4}
+                            className="text-center text-muted-foreground py-8"
+                          >
+                            No rent payments yet
+                          </TableCell>
+                        </TableRow>
+                      ) : (
+                        tables?.recent_rental_payments.map((p) => (
+                          <TableRow key={p.id}>
+                            <TableCell>
+                              {format(new Date(p.paidAt), "MMM d, yyyy")}
+                            </TableCell>
+                            <TableCell>#{p.houseNumber}</TableCell>
+                            <TableCell>{p.person}</TableCell>
+                            <TableCell className="text-right">
+                              {etb(p.amount)}
+                            </TableCell>
+                          </TableRow>
+                        ))
+                      )}
+                    </TableBody>
+                  </Table>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle>Recent sale payments</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="rounded-md border overflow-x-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Date</TableHead>
+                        <TableHead>House</TableHead>
+                        <TableHead>Buyer</TableHead>
+                        <TableHead className="text-right">Amount</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {(tables?.recent_sale_payments?.length ?? 0) === 0 ? (
+                        <TableRow>
+                          <TableCell
+                            colSpan={4}
+                            className="text-center text-muted-foreground py-8"
+                          >
+                            No sale payments yet
+                          </TableCell>
+                        </TableRow>
+                      ) : (
+                        tables?.recent_sale_payments.map((p) => (
+                          <TableRow key={p.id}>
+                            <TableCell>
+                              {format(new Date(p.paidAt), "MMM d, yyyy")}
+                            </TableCell>
+                            <TableCell>#{p.houseNumber}</TableCell>
+                            <TableCell>{p.person}</TableCell>
+                            <TableCell className="text-right">
+                              {etb(p.amount)}
+                            </TableCell>
+                          </TableRow>
+                        ))
+                      )}
+                    </TableBody>
+                  </Table>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
         </TabsContent>
       </Tabs>
     </div>

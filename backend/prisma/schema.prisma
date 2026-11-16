@@ -72,10 +72,23 @@ model Property {
   createdAt   DateTime          @default(now()) @map("created_at")
   updatedAt   DateTime          @updatedAt @map("updated_at")
 
-  rentals Rental[]
-  sales   Sale[]
+  rentals   Rental[]
+  sales     Sale[]
+  documents PropertyDocument[]
 
   @@unique([woreda, kebele, houseNumber], map: "property_address_unique")
+}
+
+model PropertyDocument {
+  id         String   @id @default(uuid())
+  propertyId String   @map("property_id")
+  property   Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  title      String
+  filePath   String   @map("file_path")
+  fileName   String?  @map("file_name")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  @@index([propertyId])
 }
 
 model Tenant {
@@ -114,14 +127,15 @@ model Rental {
 }
 
 model RentalPayment {
-  id        String   @id @default(uuid())
-  rentalId  String   @map("rental_id")
-  rental    Rental   @relation(fields: [rentalId], references: [id], onDelete: Cascade)
-  amount    Decimal  @db.Decimal(12, 2)
-  paidAt    DateTime @map("paid_at")
-  method    String
-  receiptNo String?  @map("receipt_no")
-  createdAt DateTime @default(now()) @map("created_at")
+  id          String   @id @default(uuid())
+  rentalId    String   @map("rental_id")
+  rental      Rental   @relation(fields: [rentalId], references: [id], onDelete: Cascade)
+  amount      Decimal  @db.Decimal(12, 2)
+  paidAt      DateTime @map("paid_at")
+  method      String
+  receiptNo   String?  @map("receipt_no")
+  receiptFile String?  @map("receipt_file")
+  createdAt   DateTime @default(now()) @map("created_at")
 }
 
 model Sale {

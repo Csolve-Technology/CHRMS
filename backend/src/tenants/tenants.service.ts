@@ -21,7 +21,9 @@ type TenantListItem = {
   phone: string;
   address: string | null;
   status: string;
-  propertyCode: string | null;
+  propertyHouseNumber: string | null;
+  propertyWoreda: string | null;
+  propertyKebele: string | null;
   propertyId: string | null;
 };
 
@@ -56,21 +58,29 @@ export class TenantsService {
             take: 1,
             include: { property: true },
           },
+          purchases: {
+            where: { status: { not: 'cancelled' } },
+            orderBy: { createdAt: 'desc' },
+            take: 1,
+            include: { property: true },
+          },
         },
       }),
       this.prisma.tenant.count({ where }),
     ]);
 
     const items = tenants.map((t) => {
-      const r = t.rentals[0];
+      const linked = t.rentals[0]?.property ?? t.purchases[0]?.property ?? null;
       return {
         id: t.id,
         fullName: t.fullName,
         phone: t.phone,
         address: t.address,
         status: t.status,
-        propertyCode: r?.property.code ?? null,
-        propertyId: r?.property.id ?? null,
+        propertyHouseNumber: linked?.houseNumber ?? null,
+        propertyWoreda: linked?.woreda ?? null,
+        propertyKebele: linked?.kebele ?? null,
+        propertyId: linked?.id ?? null,
       };
     });
 

@@ -4,6 +4,8 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import { existsSync, mkdirSync } from 'fs';
+import { join } from 'path';
 import {
   paginated,
   parsePagination,
@@ -15,16 +17,32 @@ import {
   isSecurityDepositPayment,
 } from '../rentals/rental-payment.constants';
 import {
-  getMonthCoverageStatus,
-  paidInMonth,
+  allocatedPaidForMonth,
+  coverageForExistingPayment,
+  describePaymentCoverage,
+  getMonthRentStatus,
 } from '../rentals/rental-overdue.util';
+import { SettingsService } from '../settings/settings.service';
 import { CreateRentalPaymentDto } from './dto/create-rental-payment.dto';
 
 const RENT_METHODS = new Set(['cash', 'bank', 'mobile', 'other']);
 
 @Injectable()
 export class RentalPaymentsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly settings: SettingsService,
+  ) {}
+
+  static receiptsDir() {
+    const dir = join(process.cwd(), 'uploads', 'payment-receipts');
+    if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+    return dir;
+  }
+
+  private receiptPublicPath(filename: string) {
+    return `/uploads/payment-receipts/${filename}`;
+  }
 
   async findAll(
     filters: PaginationQuery & { from?: string; to?: string; rentalId?: string },
@@ -38,6 +56,9 @@ export class RentalPaymentsService {
       if (filters.to) where.paidAt.lte = new Date(filters.to);
     }
 
+    const { rentalDueDay } = await this.settings.get();
+    const now = new Date();
+
     const [rows, total] = await Promise.all([
       this.prisma.rentalPayment.findMany({
         where,
@@ -47,9 +68,13 @@ export class RentalPaymentsService {
         include: {
           rental: {
             include: {
-              property: { select: { code: true } },
+              property: {
+                select: { houseNumber: true, woreda: true, kebele: true },
+              },
               tenant: { select: { fullName: true } },
-              payments: true,
+              payments: {
+                orderBy: [{ paidAt: 'asc' }, { createdAt: 'asc' }],
+              },
             },
           },
         },
@@ -59,28 +84,56 @@ export class RentalPaymentsService {
 
     const items = rows.map((p) => {
       const isDeposit = isSecurityDepositPayment(p.method);
-      const y = p.paidAt.getFullYear();
-      const m = p.paidAt.getMonth();
       const monthlyRent = Number(p.rental.monthlyRent);
-      const monthStatus = isDeposit
+      const coverage = isDeposit
         ? null
-        : getMonthCoverageStatus(monthlyRent, p.rental.payments, y, m);
-      const paidForMonth = isDeposit
-        ? null
-        : paidInMonth(p.rental.payments, y, m);
-      const balanceDue =
-        paidForMonth == null
-          ? null
-          : Math.max(0, Math.round((monthlyRent - paidForMonth) * 100) / 100);
+        : coverageForExistingPayment(
+            monthlyRent,
+            p.rental.payments,
+            p,
+            p.rental.startDate,
+            p.rental.endDate,
+            rentalDueDay,
+            now,
+          );
+      const y = now.getFullYear();
+      const m = now.getMonth();
+      const paidThisMonth = allocatedPaidForMonth(
+        monthlyRent,
+        p.rental.payments,
+        p.rental.startDate,
+        p.rental.endDate,
+        rentalDueDay,
+        y,
+        m,
+        now,
+      );
+      const balanceDue = Math.max(
+        0,
+        Math.round((monthlyRent - paidThisMonth) * 100) / 100,
+      );
       return {
         id: p.id,
-        amount: p.amount,
+        amount: Number(p.amount),
         paidAt: p.paidAt,
         method: p.method,
         receiptNo: p.receiptNo,
+        receiptFile: p.receiptFile,
         createdAt: p.createdAt,
         kind: isDeposit ? ('deposit' as const) : ('rent' as const),
-        monthStatus,
+        coverage,
+        coverageLabel: coverage?.coverageLabel ?? null,
+        monthsCovered: coverage?.months ?? [],
+        monthStatus: isDeposit
+          ? null
+          : getMonthRentStatus(
+              monthlyRent,
+              p.rental.payments,
+              rentalDueDay,
+              now,
+              p.rental.startDate,
+              p.rental.endDate,
+            ),
         balanceDue,
         rental: {
           id: p.rental.id,
@@ -94,10 +147,12 @@ export class RentalPaymentsService {
     return paginated(items, total, page, pageSize);
   }
 
-  async create(dto: CreateRentalPaymentDto) {
+  async create(dto: CreateRentalPaymentDto, file?: Express.Multer.File) {
     const rental = await this.prisma.rental.findUnique({
       where: { id: dto.rentalId },
-      include: { payments: true },
+      include: {
+        payments: { orderBy: [{ paidAt: 'asc' }, { createdAt: 'asc' }] },
+      },
     });
     if (!rental) throw new NotFoundException('Rental not found');
     if (rental.status !== 'active') {
@@ -119,21 +174,27 @@ export class RentalPaymentsService {
       );
     }
 
+    const { rentalDueDay } = await this.settings.get();
     const paidAt = new Date(dto.paidAt);
-    const y = paidAt.getFullYear();
-    const m = paidAt.getMonth();
     const monthlyRent = Number(rental.monthlyRent);
-    const alreadyPaid = paidInMonth(rental.payments, y, m);
-    const remaining = Math.round((monthlyRent - alreadyPaid) * 100) / 100;
+    const preview = describePaymentCoverage(
+      monthlyRent,
+      rental.payments,
+      dto.amount,
+      rental.startDate,
+      rental.endDate,
+      rentalDueDay,
+      paidAt,
+    );
 
-    if (remaining <= 0) {
+    if (preview.maxPayable <= 0) {
       throw new BadRequestException(
-        'This month’s rent is already fully paid',
+        'This rental has no outstanding rent balance to apply',
       );
     }
-    if (dto.amount > remaining) {
+    if (dto.amount > preview.maxPayable + 0.009) {
       throw new BadRequestException(
-        `Amount exceeds remaining rent for this month (ETB ${remaining.toLocaleString()} left)`,
+        `Amount exceeds remaining rent balance (ETB ${preview.maxPayable.toLocaleString()} left across unpaid months)`,
       );
     }
 
@@ -144,20 +205,29 @@ export class RentalPaymentsService {
         paidAt,
         method: dto.method,
         receiptNo: dto.receiptNo,
+        receiptFile: file ? this.receiptPublicPath(file.filename) : null,
       },
     });
 
-    const monthStatus = getMonthCoverageStatus(
+    const coverage = describePaymentCoverage(
       monthlyRent,
-      [...rental.payments, created],
-      y,
-      m,
+      rental.payments,
+      dto.amount,
+      rental.startDate,
+      rental.endDate,
+      rentalDueDay,
+      paidAt,
     );
 
     return {
       ...created,
+      amount: Number(created.amount),
       kind: 'rent' as const,
-      monthStatus,
+      coverage,
+      coverageLabel: coverage.coverageLabel,
+      monthsCovered: coverage.months,
+      monthsFullyCovered: coverage.monthsFullyCovered,
+      hasPartial: coverage.hasPartial,
     };
   }
 }

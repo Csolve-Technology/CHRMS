@@ -32,11 +32,12 @@ DATABASE_URL="postgresql://USER:PASSWORD@localhost:5432/chrms?schema=public"
 cd backend
 cp .env.example .env
 # Edit .env — set DATABASE_URL, JWT_SECRET, CORS_ORIGIN (comma-separated if UI uses several ports, e.g. http://localhost:8080,http://localhost:8081). If omitted, 8080 and 8081 are allowed by default.
+# Keep AUTH_MODE=local for npm run dev (email/password). Production/VPS uses AUTH_MODE=keycloak — leave that integration unchanged.
 
 npm install
 npx prisma migrate deploy
 npx prisma db seed
-npm run start:dev
+npm run dev
 ```
 
 API default: **http://localhost:3000**

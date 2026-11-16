@@ -46,6 +46,7 @@ import {
 } from "@/components/ui/select";
 import { api, getApiErrorMessage } from "@/services/api";
 import { buildPageParams, Paginated } from "@/lib/pagination";
+import { propertyLabel } from "@/lib/property-label";
 import { toast } from "@/hooks/use-toast";
 import {
   Users,
@@ -61,8 +62,12 @@ type Row = {
   id: string;
   fullName: string;
   phone: string;
+  address: string | null;
   status: string;
-  propertyCode: string | null;
+  propertyHouseNumber: string | null;
+  propertyWoreda: string | null;
+  propertyKebele: string | null;
+  propertyId: string | null;
 };
 
 type TenantDetail = {
@@ -303,7 +308,7 @@ export default function TenantsPage() {
                   onChange={(e) =>
                     setForm((f) => ({ ...f, address: e.target.value }))
                   }
-                  placeholder="Woreda, kebele, house / street"
+                  placeholder="City, kebele, house / street"
                 />
               </div>
               <div>
@@ -375,8 +380,9 @@ export default function TenantsPage() {
                   <TableHeader>
                     <TableRow>
                       <TableHead>Name</TableHead>
-                      <TableHead>Property</TableHead>
                       <TableHead>Phone</TableHead>
+                      <TableHead>Address</TableHead>
+                      <TableHead>House no.</TableHead>
                       <TableHead>Status</TableHead>
                       <TableHead className="text-right">Actions</TableHead>
                     </TableRow>
@@ -384,13 +390,13 @@ export default function TenantsPage() {
                   <TableBody>
                     {isLoading ? (
                       <TableRow>
-                        <TableCell colSpan={5} className="text-center py-8">
+                        <TableCell colSpan={6} className="text-center py-8">
                           Loading…
                         </TableCell>
                       </TableRow>
                     ) : rows.length === 0 ? (
                       <TableRow>
-                        <TableCell colSpan={5} className="text-center py-8">
+                        <TableCell colSpan={6} className="text-center py-8">
                           No tenants
                         </TableCell>
                       </TableRow>
@@ -400,8 +406,17 @@ export default function TenantsPage() {
                           <TableCell className="font-medium">
                             {t.fullName}
                           </TableCell>
-                          <TableCell>{t.propertyCode ?? "—"}</TableCell>
                           <TableCell>{t.phone}</TableCell>
+                          <TableCell className="max-w-[220px] truncate">
+                            {t.address?.trim() || "—"}
+                          </TableCell>
+                          <TableCell>
+                            {propertyLabel({
+                              houseNumber: t.propertyHouseNumber,
+                              woreda: t.propertyWoreda,
+                              kebele: t.propertyKebele,
+                            })}
+                          </TableCell>
                           <TableCell>
                             <StatusBadge status={t.status} />
                           </TableCell>
@@ -420,7 +435,7 @@ export default function TenantsPage() {
                               </DropdownMenuTrigger>
                               <DropdownMenuContent align="end">
                                 <DropdownMenuItem asChild>
-                                  <Link to={`/tenants/${t.id}`}>
+                                  <Link to={`/housing/tenant/${t.id}`}>
                                     <Eye className="mr-2 h-4 w-4" />
                                     View
                                   </Link>
@@ -541,7 +556,7 @@ export default function TenantsPage() {
                 onChange={(e) =>
                   setForm((f) => ({ ...f, address: e.target.value }))
                 }
-                placeholder="Woreda, kebele, house / street"
+                placeholder="City, kebele, house / street"
               />
             </div>
             <div>

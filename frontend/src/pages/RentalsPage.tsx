@@ -19,7 +19,6 @@ import {
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { ConfirmActionDialog } from "@/components/chrms/ConfirmActionDialog";
-import { PaymentProgressBar } from "@/components/chrms/PaymentProgressBar";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -47,6 +46,7 @@ import {
 } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { api, getApiErrorMessage } from "@/services/api";
+import { propertyLabel } from "@/lib/property-label";
 import { toast } from "@/hooks/use-toast";
 import { TablePagination } from "@/components/chrms/TablePagination";
 import { buildPageParams, Paginated } from "@/lib/pagination";
@@ -87,14 +87,24 @@ type RentalRow = {
   monthsOverdue?: number;
   monthsExpected?: number;
   tenant: { id: string; fullName: string };
-  property: { id: string; code: string | null };
+  property: {
+    id: string;
+    houseNumber: string;
+    woreda?: string;
+    kebele?: string;
+  };
   startDate: string;
   endDate?: string | null;
 };
 
 type SaleRow = {
   id: string;
-  property: { id: string; code: string | null };
+  property: {
+    id: string;
+    houseNumber: string;
+    woreda?: string;
+    kebele?: string;
+  };
   buyer: { id: string; fullName: string };
   totalPrice: number;
   totalPaid: number;
@@ -106,7 +116,13 @@ type SaleRow = {
 };
 
 type TenantOption = { id: string; fullName: string; status: string };
-type PropertyOption = { id: string; code: string | null; status: string };
+type PropertyOption = {
+  id: string;
+  houseNumber: string;
+  woreda: string;
+  kebele: string;
+  status: string;
+};
 
 const emptyRentForm = {
   propertyId: "",
@@ -315,7 +331,6 @@ export default function RentalsPage() {
     fd.append("startDate", rentForm.startDate);
     if (rentForm.endDate) fd.append("endDate", rentForm.endDate);
     fd.append("monthlyRent", rentForm.monthlyRent);
-    if (rentForm.deposit) fd.append("deposit", rentForm.deposit);
     if (!includeIds) fd.append("status", rentForm.status);
     if (agreementFile) fd.append("agreementFile", agreementFile);
     return fd;
@@ -481,7 +496,7 @@ export default function RentalsPage() {
                       <SelectContent>
                         {availableProperties.map((p) => (
                           <SelectItem key={p.id} value={p.id}>
-                            {p.code ?? p.id.slice(0, 8)}
+                            {propertyLabel(p, { withAddress: true })}
                           </SelectItem>
                         ))}
                       </SelectContent>
@@ -560,18 +575,6 @@ export default function RentalsPage() {
                       required
                     />
                   </div>
-                  <div>
-                    <Label>Security deposit</Label>
-                    <Input
-                      type="number"
-                      min={0}
-                      max={rentForm.monthlyRent || undefined}
-                      value={rentForm.deposit}
-                      onChange={(e) =>
-                        setRentForm((f) => ({ ...f, deposit: e.target.value }))
-                      }
-                    />
-                  </div>
                   {rentForm.startDate && rentForm.monthlyRent ? (
                     <div className="col-span-2 rounded-md border bg-muted/40 px-3 py-2 text-sm">
                       <p className="font-medium">
@@ -620,7 +623,7 @@ export default function RentalsPage() {
                       <SelectContent>
                         {availableProperties.map((p) => (
                           <SelectItem key={p.id} value={p.id}>
-                            {p.code ?? p.id.slice(0, 8)}
+                            {propertyLabel(p, { withAddress: true })}
                           </SelectItem>
                         ))}
                       </SelectContent>
@@ -737,8 +740,8 @@ export default function RentalsPage() {
             <CardHeader>
               <CardTitle>Rental agreements</CardTitle>
               <CardDescription>
-                Totals and month counts are calculated from recorded rental
-                payments (deposits excluded).
+                Paid and balance are calculated from recorded rent payments
+                (deposits excluded).
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -752,17 +755,11 @@ export default function RentalsPage() {
                     <Table>
                       <TableHeader>
                         <TableRow className="bg-muted/40">
-                          <TableHead>Agreement</TableHead>
-                          <TableHead>Property</TableHead>
+                          <TableHead>House no.</TableHead>
                           <TableHead>Tenant</TableHead>
-                          <TableHead>Start</TableHead>
-                          <TableHead>End</TableHead>
                           <TableHead className="text-right">Monthly</TableHead>
-                          <TableHead className="text-right">
-                            Total expected
-                          </TableHead>
                           <TableHead className="text-right">Paid</TableHead>
-                          <TableHead>Paid / unpaid</TableHead>
+                          <TableHead className="text-right">Balance</TableHead>
                           <TableHead>Status</TableHead>
                           <TableHead className="text-right">Actions</TableHead>
                         </TableRow>
@@ -771,7 +768,7 @@ export default function RentalsPage() {
                         {rentLoading ? (
                           <TableRow>
                             <TableCell
-                              colSpan={11}
+                              colSpan={7}
                               className="text-center py-10"
                             >
                               Loading…
@@ -780,7 +777,7 @@ export default function RentalsPage() {
                         ) : rows.length === 0 ? (
                           <TableRow>
                             <TableCell
-                              colSpan={11}
+                              colSpan={7}
                               className="text-center py-10"
                             >
                               No rentals yet
@@ -788,57 +785,27 @@ export default function RentalsPage() {
                           </TableRow>
                         ) : (
                           rows.map((r) => (
-                            <TableRow key={r.id} className="align-top">
-                              <TableCell className="font-medium whitespace-nowrap">
-                                {r.agreementNumber ?? "—"}
+                            <TableRow key={r.id}>
+                              <TableCell className="font-medium">
+                                {propertyLabel(r.property, {
+                                  withAddress: true,
+                                })}
                               </TableCell>
-                              <TableCell>{r.property.code ?? "—"}</TableCell>
                               <TableCell>{r.tenant.fullName}</TableCell>
-                              <TableCell className="whitespace-nowrap text-sm">
-                                {format(new Date(r.startDate), "MMM d, yyyy")}
-                              </TableCell>
-                              <TableCell className="whitespace-nowrap text-sm">
-                                {r.endDate
-                                  ? format(new Date(r.endDate), "MMM d, yyyy")
-                                  : "Open"}
-                              </TableCell>
                               <TableCell className="text-right whitespace-nowrap">
                                 {etb(r.monthlyRent)}
                               </TableCell>
-                              <TableCell className="text-right whitespace-nowrap">
-                                <div>{etb(r.totalExpected)}</div>
-                                <div className="text-xs text-muted-foreground">
-                                  {etb(r.monthlyRent)} × {r.monthsExpected ?? 0}{" "}
-                                  mo.
-                                </div>
+                              <TableCell className="text-right whitespace-nowrap text-emerald-700 dark:text-emerald-400">
+                                {etb(r.totalPaid)}
                               </TableCell>
                               <TableCell className="text-right whitespace-nowrap">
-                                <div className="text-emerald-700 dark:text-emerald-400">
-                                  {etb(r.totalPaid)}
-                                </div>
                                 {(r.outstandingBalance ?? 0) > 0 ? (
-                                  <div className="text-xs text-amber-700 dark:text-amber-400">
-                                    Due {etb(r.outstandingBalance)}
-                                  </div>
-                                ) : null}
-                              </TableCell>
-                              <TableCell className="text-sm">
-                                <div className="space-y-0.5">
-                                  <p>
-                                    <span className="text-emerald-700">
-                                      {r.monthsPaid ?? 0} paid
-                                    </span>
-                                    {" · "}
-                                    <span className="text-muted-foreground">
-                                      {r.monthsUnpaid ?? 0} unpaid
-                                    </span>
-                                  </p>
-                                  {(r.monthsOverdue ?? 0) > 0 ? (
-                                    <p className="text-destructive text-xs">
-                                      {r.monthsOverdue} overdue
-                                    </p>
-                                  ) : null}
-                                </div>
+                                  <span className="text-amber-700 dark:text-amber-400">
+                                    {etb(r.outstandingBalance)}
+                                  </span>
+                                ) : (
+                                  etb(0)
+                                )}
                               </TableCell>
                               <TableCell>
                                 <RentPaymentBadge
@@ -863,7 +830,7 @@ export default function RentalsPage() {
                                   </DropdownMenuTrigger>
                                   <DropdownMenuContent align="end">
                                     <DropdownMenuItem asChild>
-                                      <Link to={`/rentals/${r.id}`}>
+                                      <Link to={`/housing/rental/${r.id}`}>
                                         <Eye className="mr-2 h-4 w-4" />
                                         View
                                       </Link>
@@ -922,7 +889,7 @@ export default function RentalsPage() {
             <CardHeader>
               <CardTitle>Property sales</CardTitle>
               <CardDescription>
-                Installment sales synced with sale payment records
+                Paid and remaining amounts come from recorded sale payments
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -936,17 +903,12 @@ export default function RentalsPage() {
                     <Table>
                       <TableHeader>
                         <TableRow className="bg-muted/40">
-                          <TableHead>Property</TableHead>
+                          <TableHead>House no.</TableHead>
                           <TableHead>Buyer</TableHead>
-                          <TableHead>Started</TableHead>
-                          <TableHead>Term</TableHead>
                           <TableHead className="text-right">Total</TableHead>
                           <TableHead className="text-right">Paid</TableHead>
                           <TableHead className="text-right">
                             Remaining
-                          </TableHead>
-                          <TableHead className="min-w-[140px]">
-                            Progress
                           </TableHead>
                           <TableHead>Status</TableHead>
                           <TableHead className="text-right">Actions</TableHead>
@@ -956,7 +918,7 @@ export default function RentalsPage() {
                         {saleLoading ? (
                           <TableRow>
                             <TableCell
-                              colSpan={10}
+                              colSpan={7}
                               className="text-center py-10"
                             >
                               Loading…
@@ -965,7 +927,7 @@ export default function RentalsPage() {
                         ) : sales.length === 0 ? (
                           <TableRow>
                             <TableCell
-                              colSpan={10}
+                              colSpan={7}
                               className="text-center py-10"
                             >
                               No sales yet
@@ -975,13 +937,11 @@ export default function RentalsPage() {
                           sales.map((s) => (
                             <TableRow key={s.id}>
                               <TableCell className="font-medium">
-                                {s.property.code ?? "—"}
+                                {propertyLabel(s.property, {
+                                  withAddress: true,
+                                })}
                               </TableCell>
                               <TableCell>{s.buyer.fullName}</TableCell>
-                              <TableCell className="whitespace-nowrap text-sm">
-                                {format(new Date(s.startDate), "MMM d, yyyy")}
-                              </TableCell>
-                              <TableCell>{s.durationMonths} mo.</TableCell>
                               <TableCell className="text-right whitespace-nowrap">
                                 {etb(s.totalPrice)}
                               </TableCell>
@@ -990,14 +950,6 @@ export default function RentalsPage() {
                               </TableCell>
                               <TableCell className="text-right text-amber-700 whitespace-nowrap">
                                 {etb(s.remaining)}
-                              </TableCell>
-                              <TableCell>
-                                <PaymentProgressBar
-                                  value={s.completionPercentage}
-                                />
-                                <span className="text-xs text-muted-foreground">
-                                  {s.completionPercentage.toFixed(1)}%
-                                </span>
                               </TableCell>
                               <TableCell>
                                 <Badge
@@ -1009,7 +961,7 @@ export default function RentalsPage() {
                               </TableCell>
                               <TableCell className="text-right">
                                 <Button variant="outline" size="sm" asChild>
-                                  <Link to={`/sales/${s.id}`}>
+                                  <Link to={`/housing/sale/${s.id}`}>
                                     <Eye className="h-4 w-4 mr-1" />
                                     View
                                   </Link>
@@ -1053,7 +1005,12 @@ export default function RentalsPage() {
           <form onSubmit={submitEdit} className="grid grid-cols-2 gap-3">
             <div className="col-span-2">
               <Label>Property</Label>
-              <Input value={editing?.property.code ?? ""} disabled />
+              <Input
+                value={
+                  editing ? propertyLabel(editing.property, { withAddress: true }) : ""
+                }
+                disabled
+              />
             </div>
             <div className="col-span-2">
               <Label>Tenant</Label>
@@ -1102,18 +1059,6 @@ export default function RentalsPage() {
                   setRentForm((f) => ({ ...f, monthlyRent: e.target.value }))
                 }
                 required
-              />
-            </div>
-            <div>
-              <Label>Security deposit</Label>
-              <Input
-                type="number"
-                min={0}
-                max={rentForm.monthlyRent || undefined}
-                value={rentForm.deposit}
-                onChange={(e) =>
-                  setRentForm((f) => ({ ...f, deposit: e.target.value }))
-                }
               />
             </div>
             {rentForm.startDate && rentForm.monthlyRent ? (

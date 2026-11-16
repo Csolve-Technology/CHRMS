@@ -43,29 +43,23 @@ import {
   Pencil,
   Trash2,
   MoreHorizontal,
+  Plus,
 } from "lucide-react";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
-import { Label } from "@/components/ui/label";
 import { toast } from "@/hooks/use-toast";
-import { GpsLocationFields } from "@/components/chrms/GpsLocationFields";
 import { TablePagination } from "@/components/chrms/TablePagination";
 import { buildPageParams, Paginated } from "@/lib/pagination";
+import { propertyLabel } from "@/lib/property-label";
 
 type PropertyRow = {
   id: string;
-  code: string | null;
-  location: string;
+  houseNumber: string;
+  woreda: string;
+  kebele: string;
   type: string;
   category: string | null;
   status: string;
   assignee: string | null;
-  woreda: string;
+  rooms: number | null;
 };
 
 export default function PropertiesPage() {
@@ -75,21 +69,8 @@ export default function PropertiesPage() {
   const [status, setStatus] = useState<string>("all");
   const [woreda, setWoreda] = useState<string>("all");
   const [page, setPage] = useState(1);
-  const [open, setOpen] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<PropertyRow | null>(null);
-  const [form, setForm] = useState({
-    code: "",
-    type: "residential",
-    category: "kebele",
-    woreda: "Chiro City",
-    kebele: "",
-    houseNumber: "",
-    rooms: "",
-    area: "",
-    latitude: "",
-    longitude: "",
-  });
 
   useEffect(() => {
     const t = setTimeout(() => {
@@ -122,57 +103,18 @@ export default function PropertiesPage() {
     },
   });
 
+  const allWoredasQ = useQuery({
+    queryKey: ["properties-woredas"],
+    queryFn: async () => {
+      const res = await api.get<Paginated<PropertyRow>>(
+        `/properties?${buildPageParams({ page: 1, pageSize: 100 })}`,
+      );
+      return Array.from(new Set(res.data.items.map((p) => p.woreda))).sort();
+    },
+  });
+
   const rows = data?.items ?? [];
-
-  const woredas = useMemo(() => {
-    const s = new Set<string>();
-    rows.forEach((r) => s.add(r.woreda));
-    return Array.from(s).sort();
-  }, [rows]);
-
-  const submitCreate = async (e: React.FormEvent) => {
-    e.preventDefault();
-    try {
-      await api.post("/properties", {
-        code: form.code.trim() || undefined,
-        type: form.type,
-        category:
-          form.type === "residential"
-            ? form.category
-            : form.category === "condominium"
-              ? "condominium"
-              : undefined,
-        woreda: form.woreda,
-        kebele: form.kebele,
-        houseNumber: form.houseNumber,
-        rooms: form.type === "residential" ? Number(form.rooms) : undefined,
-        area: Number(form.area),
-        latitude: form.latitude ? Number(form.latitude) : undefined,
-        longitude: form.longitude ? Number(form.longitude) : undefined,
-      });
-      toast({ title: "Property created" });
-      setOpen(false);
-      setForm({
-        code: "",
-        type: "residential",
-        category: "kebele",
-        woreda: "Chiro City",
-        kebele: "",
-        houseNumber: "",
-        rooms: "",
-        area: "",
-        latitude: "",
-        longitude: "",
-      });
-      refetch();
-    } catch (err) {
-      toast({
-        title: "Failed to create property",
-        description: getApiErrorMessage(err),
-        variant: "destructive",
-      });
-    }
-  };
+  const woredas = allWoredasQ.data ?? [];
 
   const handleDelete = async (row: PropertyRow) => {
     try {
@@ -193,185 +135,37 @@ export default function PropertiesPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
-            <Home className="h-7 w-7 text-blue-600" />
+          <h1 className="flex items-center gap-2 text-2xl font-bold text-foreground">
+            <Home className="h-7 w-7 text-primary" />
             Properties
           </h1>
-          <p className="text-gray-600 text-sm mt-1">
-            Government-owned houses — search, filter, and open profiles
+          <p className="mt-1 text-sm text-muted-foreground">
+            Government-owned houses by city, kebele, and house number
           </p>
         </div>
-        <Dialog open={open} onOpenChange={setOpen}>
-          <DialogTrigger asChild>
-            <Button disabled={!hasPermission("properties.write")}>
+        {hasPermission("properties.write") ? (
+          <Button asChild>
+            <Link to="/properties/new">
+              <Plus className="mr-2 h-4 w-4" />
               Add property
-            </Button>
-          </DialogTrigger>
-          <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
-            <DialogHeader>
-              <DialogTitle>New property</DialogTitle>
-            </DialogHeader>
-            <form onSubmit={submitCreate} className="space-y-3">
-              <div className="grid grid-cols-2 gap-2">
-                <div className="col-span-2">
-                  <Label>Code (optional)</Label>
-                  <Input
-                    value={form.code}
-                    onChange={(e) =>
-                      setForm((f) => ({ ...f, code: e.target.value }))
-                    }
-                    placeholder="Auto-generated if empty"
-                  />
-                </div>
-                <div>
-                  <Label>Type</Label>
-                  <Select
-                    value={form.type}
-                    onValueChange={(v) =>
-                      setForm((f) => ({
-                        ...f,
-                        type: v,
-                        category:
-                          v === "residential"
-                            ? f.category === "none"
-                              ? "kebele"
-                              : f.category
-                            : f.category === "condominium"
-                              ? "condominium"
-                              : "none",
-                      }))
-                    }
-                  >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="residential">Residential</SelectItem>
-                      <SelectItem value="commercial">Commercial</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div>
-                  <Label>Category</Label>
-                  <Select
-                    value={form.category}
-                    onValueChange={(v) =>
-                      setForm((f) => ({ ...f, category: v }))
-                    }
-                  >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {form.type === "residential" ? (
-                        <>
-                          <SelectItem value="saving">Saving</SelectItem>
-                          <SelectItem value="kebele">Kebele</SelectItem>
-                          <SelectItem value="condominium">
-                            Condominium
-                          </SelectItem>
-                        </>
-                      ) : (
-                        <>
-                          <SelectItem value="none">
-                            Standard commercial
-                          </SelectItem>
-                          <SelectItem value="condominium">
-                            Condominium
-                          </SelectItem>
-                        </>
-                      )}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div>
-                  <Label>Woreda/City</Label>
-                  <Input
-                    value={form.woreda}
-                    onChange={(e) =>
-                      setForm((f) => ({ ...f, woreda: e.target.value }))
-                    }
-                    required
-                  />
-                </div>
-                <div>
-                  <Label>Kebele</Label>
-                  <Input
-                    value={form.kebele}
-                    onChange={(e) =>
-                      setForm((f) => ({ ...f, kebele: e.target.value }))
-                    }
-                    required
-                  />
-                </div>
-                <div>
-                  <Label>House number</Label>
-                  <Input
-                    value={form.houseNumber}
-                    onChange={(e) =>
-                      setForm((f) => ({ ...f, houseNumber: e.target.value }))
-                    }
-                    required
-                  />
-                </div>
-                <div>
-                  <Label>Area (m²)</Label>
-                  <Input
-                    type="number"
-                    min={0}
-                    step="0.01"
-                    value={form.area}
-                    onChange={(e) =>
-                      setForm((f) => ({ ...f, area: e.target.value }))
-                    }
-                    required
-                  />
-                </div>
-                {form.type === "residential" ? (
-                  <div className="col-span-2">
-                    <Label>Rooms</Label>
-                    <Input
-                      type="number"
-                      min={0}
-                      value={form.rooms}
-                      onChange={(e) =>
-                        setForm((f) => ({ ...f, rooms: e.target.value }))
-                      }
-                      required
-                    />
-                  </div>
-                ) : null}
-                <GpsLocationFields
-                  latitude={form.latitude}
-                  longitude={form.longitude}
-                  onChange={(c) => setForm((f) => ({ ...f, ...c }))}
-                />
-              </div>
-              <Button
-                type="submit"
-                disabled={!hasPermission("properties.write")}
-                className="w-full"
-              >
-                Save
-              </Button>
-            </form>
-          </DialogContent>
-        </Dialog>
+            </Link>
+          </Button>
+        ) : null}
       </div>
 
       <Card>
         <CardHeader>
           <CardTitle>Inventory</CardTitle>
-          <CardDescription>Filter by status and woreda</CardDescription>
+          <CardDescription>Filter by status and city</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="flex flex-col md:flex-row gap-3">
+          <div className="flex flex-col gap-3 md:flex-row">
             <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <Input
-                placeholder="Search code, location..."
+                placeholder="Search house number, city, kebele…"
                 className="pl-9"
                 value={q}
                 onChange={(e) => setQ(e.target.value)}
@@ -403,42 +197,42 @@ export default function PropertiesPage() {
               }}
             >
               <SelectTrigger className="w-full md:w-44">
-                <SelectValue placeholder="Woreda" />
+                <SelectValue placeholder="City" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">All woredas</SelectItem>
+                <SelectItem value="all">All cities</SelectItem>
                 {woredas.map((w) => (
                   <SelectItem key={w} value={w}>
-                    Woreda {w}
+                    {w}
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
           </div>
 
-          <div className="rounded-md border">
+          <div className="rounded-md border overflow-x-auto">
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Code</TableHead>
-                  <TableHead>Location</TableHead>
+                  <TableHead>House no.</TableHead>
+                  <TableHead>City</TableHead>
+                  <TableHead>Kebele</TableHead>
                   <TableHead>Type</TableHead>
-                  <TableHead>Category</TableHead>
                   <TableHead>Status</TableHead>
-                  <TableHead>Tenant / Buyer</TableHead>
+                  <TableHead>Occupant</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {isLoading ? (
                   <TableRow>
-                    <TableCell colSpan={7} className="text-center py-8">
+                    <TableCell colSpan={7} className="py-8 text-center">
                       Loading…
                     </TableCell>
                   </TableRow>
                 ) : rows.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={7} className="text-center py-8">
+                    <TableCell colSpan={7} className="py-8 text-center">
                       No properties
                     </TableCell>
                   </TableRow>
@@ -446,12 +240,18 @@ export default function PropertiesPage() {
                   rows.map((row) => (
                     <TableRow key={row.id}>
                       <TableCell className="font-medium">
-                        {row.code ?? "—"}
+                        {propertyLabel(row)}
                       </TableCell>
-                      <TableCell>{row.location}</TableCell>
-                      <TableCell className="capitalize">{row.type}</TableCell>
+                      <TableCell>{row.woreda}</TableCell>
+                      <TableCell>{row.kebele}</TableCell>
                       <TableCell className="capitalize">
-                        {row.category ?? "—"}
+                        {row.type}
+                        {row.category ? (
+                          <span className="text-muted-foreground">
+                            {" "}
+                            · {row.category}
+                          </span>
+                        ) : null}
                       </TableCell>
                       <TableCell>
                         <StatusBadge status={row.status} />
@@ -472,21 +272,21 @@ export default function PropertiesPage() {
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end">
                             <DropdownMenuItem asChild>
-                              <Link to={`/properties/${row.id}`}>
+                              <Link to={`/housing/property/${row.id}`}>
                                 <Eye className="mr-2 h-4 w-4" />
                                 View
                               </Link>
                             </DropdownMenuItem>
-                            {hasPermission("properties.write") && (
+                            {hasPermission("properties.write") ? (
                               <DropdownMenuItem asChild>
-                                <Link to={`/properties/${row.id}?edit=1`}>
+                                <Link to={`/housing/property/${row.id}`}>
                                   <Pencil className="mr-2 h-4 w-4" />
-                                  Edit
+                                  Open record
                                 </Link>
                               </DropdownMenuItem>
-                            )}
+                            ) : null}
                             <DropdownMenuSeparator />
-                            {hasPermission("properties.write") && (
+                            {hasPermission("properties.write") ? (
                               <DropdownMenuItem
                                 className="text-destructive focus:text-destructive"
                                 disabled={deletingId === row.id}
@@ -498,7 +298,7 @@ export default function PropertiesPage() {
                                 <Trash2 className="mr-2 h-4 w-4" />
                                 Delete
                               </DropdownMenuItem>
-                            )}
+                            ) : null}
                           </DropdownMenuContent>
                         </DropdownMenu>
                       </TableCell>
@@ -527,7 +327,7 @@ export default function PropertiesPage() {
             if (!o) setDeleteTarget(null);
           }}
           title="Delete property"
-          description={`Delete property ${deleteTarget.code}? This action cannot be undone.`}
+          description={`Delete property ${propertyLabel(deleteTarget, { withAddress: true })}? This action cannot be undone.`}
           confirmLabel="Delete"
           onConfirm={async () => {
             await handleDelete(deleteTarget);

@@ -21,6 +21,8 @@ import { ChiroLogo } from "@/components/chrms/ChiroLogo";
 
 interface SidebarProps {
   isCollapsed: boolean;
+  isMobileOpen?: boolean;
+  onNavigate?: () => void;
 }
 
 const menuItems: {
@@ -87,7 +89,11 @@ const adminItems: {
   },
 ];
 
-const Sidebar: React.FC<SidebarProps> = ({ isCollapsed }) => {
+const Sidebar: React.FC<SidebarProps> = ({
+  isCollapsed,
+  isMobileOpen = false,
+  onNavigate,
+}) => {
   const { user, logout, hasPermission } = useAuth();
   const { t } = useI18n();
 
@@ -103,18 +109,23 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed }) => {
       (item.href === "/admin/users" && hasPermission("roles.read")),
   );
 
+  const showLabels = !isCollapsed || isMobileOpen;
+
   return (
-    <div
-      className={`bg-card border-r border-border transition-all duration-300 ${
-        isCollapsed ? "w-16" : "w-64"
-      } h-full flex flex-col`}
+    <aside
+      className={[
+        "bg-card border-r border-border h-full flex flex-col transition-transform duration-300 ease-in-out",
+        "fixed inset-y-0 left-0 z-50 w-64 md:static md:z-auto md:translate-x-0",
+        isMobileOpen ? "translate-x-0 shadow-xl" : "-translate-x-full",
+        isCollapsed ? "md:w-16" : "md:w-64",
+      ].join(" ")}
     >
       <div className="p-4 border-b border-border">
         <div
-          className={`flex items-center ${isCollapsed ? "justify-center" : "space-x-3"}`}
+          className={`flex items-center ${showLabels ? "space-x-3" : "justify-center"}`}
         >
-          <ChiroLogo size={isCollapsed ? 36 : 40} />
-          {!isCollapsed && (
+          <ChiroLogo size={showLabels ? 40 : 36} />
+          {showLabels && (
             <div className="min-w-0">
               <h1 className="text-lg font-bold text-foreground leading-tight">
                 {t("app.title")}
@@ -127,7 +138,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed }) => {
         </div>
       </div>
 
-      {!isCollapsed && user && (
+      {showLabels && user && (
         <div className="p-4 border-b border-border">
           <div className="flex items-center space-x-3">
             <div className="h-10 w-10 bg-gradient-to-r from-blue-500 to-cyan-500 rounded-full flex items-center justify-center">
@@ -161,16 +172,17 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed }) => {
               <NavLink
                 key={item.href}
                 to={item.href}
+                onClick={onNavigate}
                 className={({ isActive }) =>
                   `flex items-center px-3 py-2 text-sm font-medium rounded-md transition-colors ${
                     isActive
                       ? "bg-blue-50 text-blue-700 border-r-2 border-blue-700 dark:bg-blue-950/50 dark:text-blue-300 dark:border-blue-500"
                       : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
-                  } ${isCollapsed ? "justify-center" : ""}`
+                  } ${showLabels ? "" : "justify-center"}`
                 }
               >
-                <Icon className={`h-5 w-5 ${!isCollapsed ? "mr-3" : ""}`} />
-                {!isCollapsed && (
+                <Icon className={`h-5 w-5 ${showLabels ? "mr-3" : ""}`} />
+                {showLabels && (
                   <>
                     {t(item.titleKey)}
                     <ChevronRight className="ml-auto h-4 w-4 opacity-50" />
@@ -185,10 +197,10 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed }) => {
               <Separator className="my-3" />
               <div
                 className={`px-3 py-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider ${
-                  isCollapsed ? "text-center" : ""
+                  showLabels ? "" : "text-center"
                 }`}
               >
-                {!isCollapsed ? t("nav.admin") : "A"}
+                {showLabels ? t("nav.admin") : "A"}
               </div>
               {filteredAdminItems.map((item) => {
                 const Icon = item.icon;
@@ -196,16 +208,17 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed }) => {
                   <NavLink
                     key={item.href}
                     to={item.href}
+                    onClick={onNavigate}
                     className={({ isActive }) =>
                       `flex items-center px-3 py-2 text-sm font-medium rounded-md transition-colors ${
                         isActive
                           ? "bg-red-50 text-red-700 border-r-2 border-red-700 dark:bg-red-950/40 dark:text-red-300 dark:border-red-500"
                           : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
-                      } ${isCollapsed ? "justify-center" : ""}`
+                      } ${showLabels ? "" : "justify-center"}`
                     }
                   >
-                    <Icon className={`h-5 w-5 ${!isCollapsed ? "mr-3" : ""}`} />
-                    {!isCollapsed && (
+                    <Icon className={`h-5 w-5 ${showLabels ? "mr-3" : ""}`} />
+                    {showLabels && (
                       <>
                         {t(item.titleKey)}
                         <ChevronRight className="ml-auto h-4 w-4 opacity-50" />
@@ -223,15 +236,18 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed }) => {
         <Button
           variant="ghost"
           className={`w-full ${
-            isCollapsed ? "px-2" : "justify-start"
+            showLabels ? "justify-start" : "px-2"
           } text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/30`}
-          onClick={logout}
+          onClick={() => {
+            onNavigate?.();
+            logout();
+          }}
         >
-          <LogOut className={`h-5 w-5 ${!isCollapsed ? "mr-3" : ""}`} />
-          {!isCollapsed && t("header.logout")}
+          <LogOut className={`h-5 w-5 ${showLabels ? "mr-3" : ""}`} />
+          {showLabels && t("header.logout")}
         </Button>
       </div>
-    </div>
+    </aside>
   );
 };
 

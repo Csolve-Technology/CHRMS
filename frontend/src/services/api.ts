@@ -40,10 +40,15 @@ api.interceptors.response.use(
 
 export function getApiErrorMessage(err: unknown): string {
   if (axios.isAxiosError(err)) {
-    const data = err.response?.data as { message?: string | string[] } | undefined;
-    if (typeof data?.message === "string") return data.message;
-    if (Array.isArray(data?.message)) return data.message.join(", ");
+    const data = err.response?.data;
+    if (data instanceof Blob) {
+      return err.message || "Request failed";
+    }
+    const payload = data as { message?: string | string[] } | undefined;
+    if (typeof payload?.message === "string") return payload.message;
+    if (Array.isArray(payload?.message)) return payload.message.join(", ");
     return err.message || "Request failed";
   }
+  if (err instanceof Error && err.message) return err.message;
   return "Something went wrong";
 }

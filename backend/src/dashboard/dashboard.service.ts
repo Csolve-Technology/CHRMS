@@ -2,8 +2,8 @@ import { Injectable } from '@nestjs/common';
 import { PropertyStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import {
+  allocatedPaidForMonth,
   isRentExpectedThisMonth,
-  paidInMonth,
 } from '../rentals/rental-overdue.util';
 import { SettingsService } from '../settings/settings.service';
 import { saleTotals } from '../sales/sale-calculations.util';
@@ -59,7 +59,16 @@ export class DashboardService {
       }
       const y = now.getFullYear();
       const m = now.getMonth();
-      const paidThisMonth = paidInMonth(r.payments, y, m);
+      const paidThisMonth = allocatedPaidForMonth(
+        r.monthlyRent,
+        r.payments,
+        r.startDate,
+        r.endDate,
+        appSettings.rentalDueDay,
+        y,
+        m,
+        now,
+      );
       const due = Number(r.monthlyRent);
       if (paidThisMonth < due) outstandingRent += due - paidThisMonth;
     }

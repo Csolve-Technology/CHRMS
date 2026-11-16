@@ -10,6 +10,8 @@ import Layout from "./components/layout/Layout";
 import LoginPage from "./pages/LoginPage";
 import Dashboard from "./pages/Dashboard";
 import PropertiesPage from "./pages/PropertiesPage";
+import AddPropertyPage from "./pages/AddPropertyPage";
+import HousingDetailPage from "./pages/HousingDetailPage";
 import PropertyDetailPage from "./pages/PropertyDetailPage";
 import TenantsPage from "./pages/TenantsPage";
 import TenantDetailPage from "./pages/TenantDetailPage";
@@ -127,10 +129,33 @@ function AppRoutes() {
           }
         />
         <Route
+          path="properties/new"
+          element={
+            <PermissionRoute permissions={["properties.write"]}>
+              <AddPropertyPage />
+            </PermissionRoute>
+          }
+        />
+        <Route
           path="properties/:id"
           element={
             <PermissionRoute permissions={["properties.read"]}>
               <PropertyDetailPage />
+            </PermissionRoute>
+          }
+        />
+        <Route
+          path="housing/:type/:id"
+          element={
+            <PermissionRoute
+              permissions={[
+                "properties.read",
+                "tenants.read",
+                "rentals.read",
+                "sales.read",
+              ]}
+            >
+              <HousingDetailPage />
             </PermissionRoute>
           }
         />

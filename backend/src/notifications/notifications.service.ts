@@ -2,10 +2,10 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { SettingsService } from '../settings/settings.service';
 import {
+  allocatedPaidForMonth,
   dueDateForMonth,
   isRentExpectedThisMonth,
   isRentalOverdue,
-  paidInMonth,
 } from '../rentals/rental-overdue.util';
 
 @Injectable()
@@ -34,21 +34,29 @@ export class NotificationsService {
       include: {
         payments: true,
         tenant: { select: { fullName: true } },
-        property: { select: { code: true, houseNumber: true } },
+        property: { select: { houseNumber: true } },
       },
     });
 
     for (const r of rentals) {
       if (!isRentExpectedThisMonth(r.startDate, rentalDueDay, asOf)) continue;
 
-      const paid = paidInMonth(r.payments, y, m);
+      const paid = allocatedPaidForMonth(
+        r.monthlyRent,
+        r.payments,
+        r.startDate,
+        r.endDate,
+        rentalDueDay,
+        y,
+        m,
+        asOf,
+      );
       const rent = Number(r.monthlyRent);
       if (paid >= rent) continue;
 
-      const label =
-        r.property.code ||
-        `#${r.property.houseNumber}` ||
-        r.agreementNumber;
+      const label = r.property.houseNumber
+        ? `#${r.property.houseNumber}`
+        : r.agreementNumber;
       const shortfall = Math.round((rent - paid) * 100) / 100;
 
       if (
@@ -58,6 +66,7 @@ export class NotificationsService {
           rentalDueDay,
           asOf,
           r.startDate,
+          r.endDate,
         )
       ) {
         await this.upsert({

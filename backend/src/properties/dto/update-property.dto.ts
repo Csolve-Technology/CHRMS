@@ -12,11 +12,6 @@ import {
 
 export class UpdatePropertyDto {
   @IsOptional()
-  @ValidateIf((_, v) => v !== null)
-  @IsString()
-  code?: string | null;
-
-  @IsOptional()
   @IsEnum(PropertyType)
   type?: PropertyType;
 

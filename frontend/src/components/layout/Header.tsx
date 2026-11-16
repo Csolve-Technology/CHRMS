@@ -20,6 +20,7 @@ import {
   Bell,
   Search,
   Menu,
+  X,
   Settings,
   User,
   LogOut,
@@ -32,6 +33,7 @@ import { formatDistanceToNow } from "date-fns";
 interface HeaderProps {
   onToggleSidebar: () => void;
   isCollapsed: boolean;
+  isMobileNavOpen?: boolean;
 }
 
 type AppNotification = {
@@ -52,7 +54,11 @@ const getInitials = (name: string) => {
     .toUpperCase();
 };
 
-const Header: React.FC<HeaderProps> = ({ onToggleSidebar, isCollapsed }) => {
+const Header: React.FC<HeaderProps> = ({
+  onToggleSidebar,
+  isCollapsed: _isCollapsed,
+  isMobileNavOpen = false,
+}) => {
   const { user, logout, hasPermission } = useAuth();
   const { t } = useI18n();
   const qc = useQueryClient();
@@ -92,63 +98,34 @@ const Header: React.FC<HeaderProps> = ({ onToggleSidebar, isCollapsed }) => {
   const unreadCount = notifQ.data?.unreadCount ?? 0;
 
   return (
-    <header
-      className="bg-card border-b border-border px-6 py-4"
-      data-id="4rqgu5shv"
-      data-path="src/components/layout/Header.tsx"
-    >
-      <div
-        className="flex items-center justify-between"
-        data-id="pj9p3bf9m"
-        data-path="src/components/layout/Header.tsx"
-      >
-        {/* Left Section */}
-        <div
-          className="flex items-center space-x-4"
-          data-id="1096b5kw8"
-          data-path="src/components/layout/Header.tsx"
-        >
+    <header className="bg-card border-b border-border px-3 py-3 sm:px-6 sm:py-4">
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center space-x-2 sm:space-x-4 min-w-0">
           <Button
             variant="ghost"
             size="sm"
             onClick={onToggleSidebar}
-            className="p-2"
-            data-id="gwxruzjrh"
-            data-path="src/components/layout/Header.tsx"
+            className="p-2 shrink-0"
+            aria-label={isMobileNavOpen ? "Close menu" : "Open menu"}
+            aria-expanded={isMobileNavOpen}
           >
-            <Menu
-              className="h-5 w-5"
-              data-id="qa5g654y5"
-              data-path="src/components/layout/Header.tsx"
-            />
+            {isMobileNavOpen ? (
+              <X className="h-5 w-5" />
+            ) : (
+              <Menu className="h-5 w-5" />
+            )}
           </Button>
 
-          {/* Search Bar */}
-          <div
-            className="relative hidden md:block"
-            data-id="w9jvayqqi"
-            data-path="src/components/layout/Header.tsx"
-          >
-            <Search
-              className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground"
-              data-id="m79qgurx4"
-              data-path="src/components/layout/Header.tsx"
-            />
+          <div className="relative hidden md:block">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input
               placeholder={t("header.searchPlaceholder")}
               className="pl-10 w-80"
-              data-id="qh5v0ojwx"
-              data-path="src/components/layout/Header.tsx"
             />
           </div>
         </div>
 
-        {/* Right Section */}
-        <div
-          className="flex items-center space-x-4"
-          data-id="n5jz4un9t"
-          data-path="src/components/layout/Header.tsx"
-        >
+        <div className="flex items-center gap-1 sm:gap-2 md:space-x-2 shrink-0">
           <LanguageSwitcher />
           <ThemeSwitcher />
 
@@ -226,7 +203,7 @@ const Header: React.FC<HeaderProps> = ({ onToggleSidebar, isCollapsed }) => {
                   const href =
                     notification.entityType === "rental" &&
                     notification.entityId
-                      ? `/rentals/${notification.entityId}`
+                      ? `/housing/rental/${notification.entityId}`
                       : undefined;
                   return (
                     <DropdownMenuItem
@@ -308,19 +285,8 @@ const Header: React.FC<HeaderProps> = ({ onToggleSidebar, isCollapsed }) => {
             </DropdownMenuContent>
           </DropdownMenu>
 
-          {/* Help */}
-          <Button
-            variant="ghost"
-            size="sm"
-            className="p-2"
-            data-id="7px4cynoy"
-            data-path="src/components/layout/Header.tsx"
-          >
-            <HelpCircle
-              className="h-5 w-5"
-              data-id="54ubegnbu"
-              data-path="src/components/layout/Header.tsx"
-            />
+          <Button variant="ghost" size="sm" className="hidden p-2 sm:inline-flex">
+            <HelpCircle className="h-5 w-5" />
           </Button>
 
           {/* User Menu */}

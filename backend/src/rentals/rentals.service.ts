@@ -16,12 +16,14 @@ import { SettingsService } from '../settings/settings.service';
 import {
   RENTAL_STATUSES,
   SECURITY_DEPOSIT_METHOD,
+  isSecurityDepositPayment,
   type RentalStatus,
 } from './rental-payment.constants';
 import {
+  allocatedPaidForMonth,
   buildRentalPeriodSummary,
+  coverageForExistingPayment,
   getMonthRentStatus,
-  paidInMonth,
 } from './rental-overdue.util';
 import { CreateRentalDto } from './dto/create-rental.dto';
 import { UpdateRentalDto } from './dto/update-rental.dto';
@@ -143,11 +145,21 @@ export class RentalsService {
               rentalDueDay,
               now,
               r.startDate,
+              r.endDate,
             )
           : null;
       const paidThisMonth =
         r.status === 'active'
-          ? paidInMonth(r.payments, now.getFullYear(), now.getMonth())
+          ? allocatedPaidForMonth(
+              r.monthlyRent,
+              r.payments,
+              r.startDate,
+              r.endDate,
+              rentalDueDay,
+              now.getFullYear(),
+              now.getMonth(),
+              now,
+            )
           : null;
       const balanceDue =
         paidThisMonth == null
@@ -177,7 +189,6 @@ export class RentalsService {
         },
         property: {
           id: r.property.id,
-          code: r.property.code,
           type: r.property.type,
           category: r.property.category,
           woreda: r.property.woreda,
@@ -221,12 +232,22 @@ export class RentalsService {
             rentalDueDay,
             now,
             r.startDate,
+            r.endDate,
           )
         : null;
     const monthlyRent = Number(r.monthlyRent);
     const paidThisMonth =
       r.status === 'active'
-        ? paidInMonth(r.payments, now.getFullYear(), now.getMonth())
+        ? allocatedPaidForMonth(
+            r.monthlyRent,
+            r.payments,
+            r.startDate,
+            r.endDate,
+            rentalDueDay,
+            now.getFullYear(),
+            now.getMonth(),
+            now,
+          )
         : null;
     const balanceDue =
       paidThisMonth == null
@@ -240,8 +261,45 @@ export class RentalsService {
       rentalDueDay,
       now,
     );
+    const payments = r.payments.map((p) => {
+      const amount = Number(p.amount);
+      if (isSecurityDepositPayment(p.method)) {
+        return {
+          ...p,
+          amount,
+          kind: 'deposit' as const,
+          coverageLabel: 'Security deposit',
+          monthsCovered: [] as {
+            year: number;
+            month: number;
+            label: string;
+            amountApplied: number;
+            statusAfter: string;
+          }[],
+        };
+      }
+      const coverage = coverageForExistingPayment(
+        monthlyRent,
+        r.payments,
+        p,
+        r.startDate,
+        r.endDate,
+        rentalDueDay,
+        now,
+      );
+      return {
+        ...p,
+        amount,
+        kind: 'rent' as const,
+        coverageLabel: coverage.coverageLabel,
+        monthsCovered: coverage.months,
+        monthsFullyCovered: coverage.monthsFullyCovered,
+        hasPartial: coverage.hasPartial,
+      };
+    });
     return {
       ...r,
+      payments,
       monthlyRent,
       deposit: r.deposit ? Number(r.deposit) : null,
       paymentStatus,
