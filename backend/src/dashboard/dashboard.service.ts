@@ -5,6 +5,7 @@ import {
   allocatedPaidForMonth,
   isRentExpectedThisMonth,
 } from '../rentals/rental-overdue.util';
+import { isSecurityDepositPayment as isDeposit } from '../rentals/rental-payment.constants';
 import { SettingsService } from '../settings/settings.service';
 import { saleTotals } from '../sales/sale-calculations.util';
 
@@ -16,17 +17,41 @@ export class DashboardService {
   ) {}
 
   async getSummary() {
-    const [totalProperties, byStatus, rentalPayAgg, sales, appSettings] =
-      await Promise.all([
-        this.prisma.property.count(),
-        this.prisma.property.groupBy({
-          by: ['status'],
-          _count: { _all: true },
-        }),
-        this.prisma.rentalPayment.aggregate({ _sum: { amount: true } }),
-        this.prisma.sale.findMany({ include: { payments: true } }),
-        this.settings.get(),
-      ]);
+    const [
+      totalProperties,
+      byStatus,
+      byCategory,
+      byKebele,
+      rentalPayments,
+      sales,
+      appSettings,
+      tenantCounts,
+      rentalCounts,
+      saleCounts,
+    ] = await Promise.all([
+      this.prisma.property.count(),
+      this.prisma.property.groupBy({
+        by: ['status'],
+        _count: { _all: true },
+      }),
+      this.prisma.property.groupBy({
+        by: ['category'],
+        _count: { _all: true },
+      }),
+      this.prisma.property.groupBy({
+        by: ['kebele'],
+        _count: { _all: true },
+        orderBy: { kebele: 'asc' },
+      }),
+      this.prisma.rentalPayment.findMany({
+        select: { amount: true, method: true },
+      }),
+      this.prisma.sale.findMany({ include: { payments: true } }),
+      this.settings.get(),
+      this.prisma.tenant.groupBy({ by: ['status'], _count: { _all: true } }),
+      this.prisma.rental.groupBy({ by: ['status'], _count: { _all: true } }),
+      this.prisma.sale.groupBy({ by: ['status'], _count: { _all: true } }),
+    ]);
 
     const statusMap = Object.fromEntries(
       byStatus.map((r) => [r.status, r._count._all]),
@@ -43,8 +68,15 @@ export class DashboardService {
       if (!t.isCompleted) outstandingSales += t.remaining;
     }
 
-    const totalRentalRevenue = Number(rentalPayAgg._sum.amount ?? 0);
-    const totalRevenue = totalRentalRevenue + salePaymentsTotal;
+    let rentalRevenue = 0;
+    let depositHeld = 0;
+    for (const p of rentalPayments) {
+      const amt = Number(p.amount);
+      if (isDeposit(p.method)) depositHeld += amt;
+      else rentalRevenue += amt;
+    }
+
+    const totalRevenue = rentalRevenue + salePaymentsTotal;
 
     const activeRentals = await this.prisma.rental.findMany({
       where: { status: 'active' },
@@ -52,13 +84,16 @@ export class DashboardService {
     });
 
     let outstandingRent = 0;
+    let rentExpectedThisMonth = 0;
+    let rentPaidThisMonth = 0;
     const now = new Date();
+    const y = now.getFullYear();
+    const m = now.getMonth();
     for (const r of activeRentals) {
       if (!isRentExpectedThisMonth(r.startDate, appSettings.rentalDueDay, now)) {
         continue;
       }
-      const y = now.getFullYear();
-      const m = now.getMonth();
+      const monthlyRent = Number(r.monthlyRent);
       const paidThisMonth = allocatedPaidForMonth(
         r.monthlyRent,
         r.payments,
@@ -69,11 +104,38 @@ export class DashboardService {
         m,
         now,
       );
-      const due = Number(r.monthlyRent);
-      if (paidThisMonth < due) outstandingRent += due - paidThisMonth;
+      rentExpectedThisMonth += monthlyRent;
+      rentPaidThisMonth += Math.min(paidThisMonth, monthlyRent);
+      if (paidThisMonth < monthlyRent) {
+        outstandingRent += monthlyRent - paidThisMonth;
+      }
     }
 
     const outstanding_balance = outstandingSales + outstandingRent;
+    const tenantsByStatus = Object.fromEntries(
+      tenantCounts.map((r) => [r.status, r._count._all]),
+    );
+    const rentalsByStatus = Object.fromEntries(
+      rentalCounts.map((r) => [r.status, r._count._all]),
+    );
+    const salesByStatus = Object.fromEntries(
+      saleCounts.map((r) => [r.status, r._count._all]),
+    );
+
+    const properties_by_status = byStatus.map((r) => ({
+      name: r.status,
+      value: r._count._all,
+    }));
+
+    const properties_by_category = byCategory.map((r) => ({
+      name: r.category ?? 'uncategorized',
+      value: r._count._all,
+    }));
+
+    const properties_by_kebele = byKebele.map((r) => ({
+      name: r.kebele,
+      value: r._count._all,
+    }));
 
     return {
       total_properties: totalProperties,
@@ -82,7 +144,22 @@ export class DashboardService {
       sold,
       maintenance: statusMap[PropertyStatus.maintenance] ?? 0,
       total_revenue: Math.round(totalRevenue * 100) / 100,
+      rental_revenue: Math.round(rentalRevenue * 100) / 100,
+      sale_revenue: Math.round(salePaymentsTotal * 100) / 100,
+      deposit_held: Math.round(depositHeld * 100) / 100,
       outstanding_balance: Math.round(outstanding_balance * 100) / 100,
+      outstanding_rent: Math.round(outstandingRent * 100) / 100,
+      outstanding_sales: Math.round(outstandingSales * 100) / 100,
+      rent_expected_this_month:
+        Math.round(rentExpectedThisMonth * 100) / 100,
+      rent_paid_this_month: Math.round(rentPaidThisMonth * 100) / 100,
+      total_tenants: tenantCounts.reduce((s, r) => s + r._count._all, 0),
+      active_tenants: tenantsByStatus['active'] ?? 0,
+      active_rentals: rentalsByStatus['active'] ?? 0,
+      active_sales: salesByStatus['active'] ?? 0,
+      properties_by_status,
+      properties_by_category,
+      properties_by_kebele,
     };
   }
 
@@ -96,7 +173,7 @@ export class DashboardService {
     const [rentalPayments, salePayments] = await Promise.all([
       this.prisma.rentalPayment.findMany({
         where: { paidAt: { gte: start } },
-        select: { amount: true, paidAt: true },
+        select: { amount: true, paidAt: true, method: true },
       }),
       this.prisma.salePayment.findMany({
         where: { paidAt: { gte: start } },
@@ -125,6 +202,7 @@ export class DashboardService {
       `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
 
     for (const p of rentalPayments) {
+      if (isDeposit(p.method)) continue;
       const k = bucket(p.paidAt);
       if (rentalByMonth[k] !== undefined) rentalByMonth[k] += Number(p.amount);
     }
@@ -143,6 +221,8 @@ export class DashboardService {
     const payment_trends = monthly_revenue.map((row) => ({
       month: row.month,
       total: row.total,
+      rental: row.rental,
+      sale: row.sale,
     }));
 
     return { monthly_revenue, payment_trends };
