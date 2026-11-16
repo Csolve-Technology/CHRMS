@@ -9,6 +9,7 @@ export const KEBELES = [
   "Ifaa Najbaas",
   "Barii Qillisoo",
   "Ballina Ciroo",
+  "Madhicho",
 ] as const;
 
 export type KebeleName = (typeof KEBELES)[number];
