@@ -1,4 +1,13 @@
-import { Body, Controller, Get, Param, Post, Query, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  Post,
+  Query,
+  UseGuards,
+} from '@nestjs/common';
 import { Permission } from '../common/constants/permissions';
 import { RequirePermissions } from '../common/decorators/permissions.decorator';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
@@ -30,5 +39,11 @@ export class SalesController {
   @RequirePermissions(Permission.SALES_WRITE)
   create(@Body() dto: CreateSaleDto) {
     return this.sales.create(dto);
+  }
+
+  @Delete(':id')
+  @RequirePermissions(Permission.SALES_WRITE)
+  remove(@Param('id') id: string) {
+    return this.sales.remove(id);
   }
 }

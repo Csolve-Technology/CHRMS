@@ -334,6 +334,7 @@ export default function TenantsPage() {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="active">Active</SelectItem>
+                    <SelectItem value="former">Former tenant</SelectItem>
                     <SelectItem value="inactive">Inactive</SelectItem>
                   </SelectContent>
                 </Select>
@@ -582,6 +583,7 @@ export default function TenantsPage() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="active">Active</SelectItem>
+                  <SelectItem value="former">Former tenant</SelectItem>
                   <SelectItem value="inactive">Inactive</SelectItem>
                 </SelectContent>
               </Select>

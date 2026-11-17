@@ -249,6 +249,9 @@ export default function RentalsPage() {
   const [salePage, setSalePage] = useState(1);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<RentalRow | null>(null);
+  const [saleDeleteTarget, setSaleDeleteTarget] = useState<SaleRow | null>(
+    null,
+  );
   const [creating, setCreating] = useState(false);
   const [txType, setTxType] = useState<"rent" | "sale">("rent");
   const [editing, setEditing] = useState<RentalRow | null>(null);
@@ -414,6 +417,24 @@ export default function RentalsPage() {
     } catch (err) {
       toast({
         title: "Failed to delete rental",
+        description: getApiErrorMessage(err),
+        variant: "destructive",
+      });
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
+  const handleDeleteSale = async (sale: SaleRow) => {
+    try {
+      setDeletingId(sale.id);
+      await api.delete(`/sales/${sale.id}`);
+      toast({ title: "Sale deleted" });
+      refetchSales();
+      refetchProperties();
+    } catch (err) {
+      toast({
+        title: "Failed to delete sale",
         description: getApiErrorMessage(err),
         variant: "destructive",
       });
@@ -960,12 +981,41 @@ export default function RentalsPage() {
                                 </Badge>
                               </TableCell>
                               <TableCell className="text-right">
-                                <Button variant="outline" size="sm" asChild>
-                                  <Link to={`/housing/sale/${s.id}`}>
-                                    <Eye className="h-4 w-4 mr-1" />
-                                    View
-                                  </Link>
-                                </Button>
+                                <DropdownMenu>
+                                  <DropdownMenuTrigger asChild>
+                                    <Button
+                                      variant="outline"
+                                      size="sm"
+                                      className="h-8 w-8 p-0"
+                                      disabled={deletingId === s.id}
+                                    >
+                                      <MoreHorizontal className="h-4 w-4" />
+                                      <span className="sr-only">Open menu</span>
+                                    </Button>
+                                  </DropdownMenuTrigger>
+                                  <DropdownMenuContent align="end">
+                                    <DropdownMenuItem asChild>
+                                      <Link to={`/housing/sale/${s.id}`}>
+                                        <Eye className="mr-2 h-4 w-4" />
+                                        View
+                                      </Link>
+                                    </DropdownMenuItem>
+                                    <DropdownMenuSeparator />
+                                    {hasPermission("sales.write") ? (
+                                      <DropdownMenuItem
+                                        className="text-destructive focus:text-destructive"
+                                        disabled={deletingId === s.id}
+                                        onSelect={(e) => {
+                                          e.preventDefault();
+                                          setSaleDeleteTarget(s);
+                                        }}
+                                      >
+                                        <Trash2 className="mr-2 h-4 w-4" />
+                                        Delete
+                                      </DropdownMenuItem>
+                                    ) : null}
+                                  </DropdownMenuContent>
+                                </DropdownMenu>
                               </TableCell>
                             </TableRow>
                           ))
@@ -1088,11 +1138,14 @@ export default function RentalsPage() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="active">Active — ongoing lease</SelectItem>
+                  <SelectItem value="expired">
+                    Expired, if not renewed
+                  </SelectItem>
                   <SelectItem value="completed">
                     Completed — lease ended
                   </SelectItem>
                   <SelectItem value="cancelled">
-                    Cancelled — voided early
+                    Cancelled — terminated early
                   </SelectItem>
                 </SelectContent>
               </Select>
@@ -1124,6 +1177,21 @@ export default function RentalsPage() {
           confirmLabel="Delete"
           onConfirm={async () => {
             await handleDelete(deleteTarget);
+          }}
+        />
+      ) : null}
+
+      {saleDeleteTarget ? (
+        <ConfirmActionDialog
+          open
+          onOpenChange={(o) => {
+            if (!o) setSaleDeleteTarget(null);
+          }}
+          title="Delete sale"
+          description={`Delete sale for ${propertyLabel(saleDeleteTarget.property)} (${saleDeleteTarget.buyer.fullName})? Payment history for this sale will also be removed.`}
+          confirmLabel="Delete"
+          onConfirm={async () => {
+            await handleDeleteSale(saleDeleteTarget);
           }}
         />
       ) : null}

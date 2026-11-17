@@ -46,9 +46,11 @@ export function rentalStatusHelp(status: string): string {
     case "active":
       return "Lease ongoing — rent payments and due reminders apply; property is rented.";
     case "completed":
-      return "Only after the lease end date (term finished). For a 1-month lease, wait until that end date — not the same day you start.";
+      return "Lease finished on its scheduled end date.";
+    case "expired":
+      return "Lease reached its end date without renewal. Property is available; tenant history is kept.";
     case "cancelled":
-      return "Use this if the lease stops early or is voided (including same day). Property is freed; payments stay on record.";
+      return "Lease ended early (terminated). Property is freed; payments and history stay on record.";
     default:
       return "";
   }

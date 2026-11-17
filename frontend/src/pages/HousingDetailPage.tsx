@@ -14,6 +14,8 @@ import {
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
@@ -53,6 +55,7 @@ import {
   AlertTriangle,
   ArrowLeft,
   Banknote,
+  CalendarX2,
   Download,
   ExternalLink,
   Eye,
@@ -61,10 +64,11 @@ import {
   MapPin,
   Paperclip,
   Plus,
+  RefreshCw,
   UserRound,
 } from "lucide-react";
 import React, { useMemo, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 
 function DetailField({
   label,
@@ -105,6 +109,7 @@ type PropertyBundle = {
     phone: string;
     nationalId?: string | null;
     address?: string | null;
+    status?: string;
     rental: {
       id: string;
       agreementNumber?: string | null;
@@ -116,6 +121,15 @@ type PropertyBundle = {
       endDate?: string | null;
     };
   };
+  rentalHistory?: Array<{
+    id: string;
+    status: string;
+    agreementNumber?: string | null;
+    startDate: string;
+    endDate?: string | null;
+    monthlyRent: number;
+    tenant: { id: string; fullName: string; status: string };
+  }>;
   sale: null | {
     id: string;
     totalPrice: number;
@@ -216,6 +230,7 @@ type RentalDetail = {
     phone: string;
     nationalId?: string | null;
     address?: string | null;
+    status?: string;
   };
   property: {
     id: string;
@@ -310,6 +325,7 @@ function MonthStatusBadge({ status }: { status: PeriodMonth["status"] }) {
 export default function HousingDetailPage() {
   const { hasPermission } = useAuth();
   const { type, id } = useParams<{ type: EntityType; id: string }>();
+  const navigate = useNavigate();
   const qc = useQueryClient();
   const entityType = (type ?? "property") as EntityType;
 
@@ -328,6 +344,17 @@ export default function HousingDetailPage() {
     amount: "",
     paidAt: format(new Date(), "yyyy-MM-dd"),
     method: "cash",
+  });
+  const [terminateOpen, setTerminateOpen] = useState(false);
+  const [terminateDate, setTerminateDate] = useState(
+    format(new Date(), "yyyy-MM-dd"),
+  );
+  const [renewOpen, setRenewOpen] = useState(false);
+  const [renewForm, setRenewForm] = useState({
+    endDate: "",
+    monthlyRent: "",
+    startDate: "",
+    agreementFile: null as File | null,
   });
 
   const propertyQuery = useQuery({
@@ -367,9 +394,21 @@ export default function HousingDetailPage() {
 
   const linkedRentalId = useMemo(() => {
     if (entityType === "rental") return id;
-    if (entityType === "property") return propertyQuery.data?.tenant?.rental.id;
+    if (entityType === "property") {
+      const active = propertyQuery.data?.tenant?.rental;
+      if (active?.status === "active") return active.id;
+      return (
+        propertyQuery.data?.rentalHistory?.find((r) => r.status === "active")
+          ?.id ??
+        active?.id ??
+        propertyQuery.data?.rentalHistory?.[0]?.id
+      );
+    }
     if (entityType === "tenant") {
-      return tenantQuery.data?.rentals.find((r) => r.status === "active")?.id;
+      return (
+        tenantQuery.data?.rentals.find((r) => r.status === "active")?.id ??
+        tenantQuery.data?.rentals[0]?.id
+      );
     }
     return undefined;
   }, [entityType, id, propertyQuery.data, tenantQuery.data]);
@@ -504,6 +543,75 @@ export default function HousingDetailPage() {
       }),
   });
 
+  const terminateRental = useMutation({
+    mutationFn: async () => {
+      if (!rental) throw new Error("No rental");
+      await api.post(`/rentals/${rental.id}/terminate`, {
+        terminatedAt: new Date(terminateDate).toISOString(),
+      });
+    },
+    onSuccess: () => {
+      toast({
+        title: "Rental terminated",
+        description:
+          "Agreement ended early. Property is available and tenant history was preserved.",
+      });
+      setTerminateOpen(false);
+      qc.invalidateQueries({ queryKey: ["housing"] });
+      qc.invalidateQueries({ queryKey: ["rentals"] });
+      qc.invalidateQueries({ queryKey: ["properties"] });
+      qc.invalidateQueries({ queryKey: ["tenants"] });
+    },
+    onError: (err) =>
+      toast({
+        title: "Could not terminate rental",
+        description: getApiErrorMessage(err),
+        variant: "destructive",
+      }),
+  });
+
+  const renewRental = useMutation({
+    mutationFn: async () => {
+      if (!rental) throw new Error("No rental");
+      const fd = new FormData();
+      fd.append("endDate", new Date(renewForm.endDate).toISOString());
+      if (renewForm.monthlyRent)
+        fd.append("monthlyRent", String(Number(renewForm.monthlyRent)));
+      if (rental.status !== "active" && renewForm.startDate) {
+        fd.append("startDate", new Date(renewForm.startDate).toISOString());
+      }
+      if (renewForm.agreementFile) {
+        fd.append("agreementFile", renewForm.agreementFile);
+      }
+      const res = await api.post(`/rentals/${rental.id}/renew`, fd);
+      return res.data as { id: string };
+    },
+    onSuccess: (data) => {
+      const wasActive = rental?.status === "active";
+      toast({
+        title: "Rental renewed",
+        description: wasActive
+          ? "Lease end date extended."
+          : "New rental agreement created. Previous history is preserved.",
+      });
+      setRenewOpen(false);
+      setRenewForm((f) => ({ ...f, agreementFile: null }));
+      qc.invalidateQueries({ queryKey: ["housing"] });
+      qc.invalidateQueries({ queryKey: ["rentals"] });
+      qc.invalidateQueries({ queryKey: ["properties"] });
+      qc.invalidateQueries({ queryKey: ["tenants"] });
+      if (!wasActive && data?.id) {
+        navigate(`/housing/rental/${data.id}`);
+      }
+    },
+    onError: (err) =>
+      toast({
+        title: "Could not renew rental",
+        description: getApiErrorMessage(err),
+        variant: "destructive",
+      }),
+  });
+
   const uploadDocument = useMutation({
     mutationFn: async () => {
       const propertyId =
@@ -552,6 +660,7 @@ export default function HousingDetailPage() {
           phone: rental.tenant.phone,
           nationalId: rental.tenant.nationalId,
           address: rental.tenant.address,
+          status: rental.tenant.status,
           rental: {
             id: rental.id,
             agreementNumber: rental.agreementNumber,
@@ -782,6 +891,11 @@ export default function HousingDetailPage() {
                 <DetailField label="Address">
                   {occupant.address ?? "—"}
                 </DetailField>
+                {"status" in occupant && occupant.status ? (
+                  <DetailField label="Status">
+                    <StatusBadge status={String(occupant.status)} />
+                  </DetailField>
+                ) : null}
               </dl>
             ) : sale || propertyBundle?.sale ? (
               <dl className="grid gap-4 sm:grid-cols-2">
@@ -824,13 +938,72 @@ export default function HousingDetailPage() {
 
         <Card className="overflow-hidden border-border/80 shadow-sm lg:col-span-2">
           <CardHeader className="border-b bg-muted/30 pb-4">
-            <CardTitle className="flex items-center gap-2 text-base">
-              <FileText className="h-4 w-4 text-primary" />
-              Agreement
-            </CardTitle>
-            <CardDescription>
-              Rent or sale terms linked to this house
-            </CardDescription>
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <CardTitle className="flex items-center gap-2 text-base">
+                  <FileText className="h-4 w-4 text-primary" />
+                  Agreement
+                </CardTitle>
+                <CardDescription>
+                  Rent or sale terms linked to this house
+                </CardDescription>
+              </div>
+              {rental && hasPermission("rentals.write") ? (
+                <div className="flex flex-wrap gap-2">
+                  {rental.status === "active" ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="text-rose-700 border-rose-200 hover:bg-rose-50"
+                      onClick={() => {
+                        setTerminateDate(format(new Date(), "yyyy-MM-dd"));
+                        setTerminateOpen(true);
+                      }}
+                    >
+                      <CalendarX2 className="mr-1 h-4 w-4" />
+                      End early
+                    </Button>
+                  ) : null}
+                  {["active", "expired", "cancelled", "completed"].includes(
+                    rental.status,
+                  ) ? (
+                    <Button
+                      type="button"
+                      size="sm"
+                      onClick={() => {
+                        const baseEnd = rental.endDate
+                          ? new Date(rental.endDate)
+                          : new Date();
+                        const suggested = new Date(baseEnd);
+                        suggested.setMonth(suggested.getMonth() + 12);
+                        setRenewForm({
+                          endDate: format(suggested, "yyyy-MM-dd"),
+                          monthlyRent: String(rental.monthlyRent),
+                          startDate: format(
+                            rental.status === "active"
+                              ? new Date(rental.startDate)
+                              : rental.endDate
+                                ? (() => {
+                                    const d = new Date(rental.endDate);
+                                    d.setDate(d.getDate() + 1);
+                                    return d;
+                                  })()
+                                : new Date(),
+                            "yyyy-MM-dd",
+                          ),
+                          agreementFile: null,
+                        });
+                        setRenewOpen(true);
+                      }}
+                    >
+                      <RefreshCw className="mr-1 h-4 w-4" />
+                      Renew
+                    </Button>
+                  ) : null}
+                </div>
+              ) : null}
+            </div>
           </CardHeader>
           <CardContent className="space-y-5 pt-5">
             {rental ? (
@@ -955,6 +1128,40 @@ export default function HousingDetailPage() {
               <p className="text-sm text-muted-foreground">
                 No rent or sale agreement is linked yet.
               </p>
+            ) : null}
+
+            {propertyBundle?.rentalHistory &&
+            propertyBundle.rentalHistory.length > 1 ? (
+              <div className="space-y-2 border-t pt-4">
+                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                  Rental history
+                </p>
+                <div className="space-y-2">
+                  {propertyBundle.rentalHistory.map((r) => (
+                    <div
+                      key={r.id}
+                      className="flex flex-wrap items-center justify-between gap-2 rounded-xl border bg-muted/20 p-3"
+                    >
+                      <div>
+                        <Link
+                          to={`/housing/rental/${r.id}`}
+                          className="font-medium text-primary hover:underline"
+                        >
+                          {r.agreementNumber ?? "Agreement"} · {r.tenant.fullName}
+                        </Link>
+                        <p className="text-sm text-muted-foreground">
+                          {etb(r.monthlyRent)} ·{" "}
+                          {format(new Date(r.startDate), "MMM d, yyyy")}
+                          {r.endDate
+                            ? ` – ${format(new Date(r.endDate), "MMM d, yyyy")}`
+                            : ""}
+                        </p>
+                      </div>
+                      <StatusBadge status={r.status} />
+                    </div>
+                  ))}
+                </div>
+              </div>
             ) : null}
           </CardContent>
         </Card>
@@ -1454,6 +1661,139 @@ export default function HousingDetailPage() {
           </CardContent>
         </Card>
       </div>
+
+      <Dialog open={renewOpen} onOpenChange={setRenewOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>
+              {rental?.status === "active"
+                ? "Renew rental (extend end date)"
+                : "Renew rental (new agreement)"}
+            </DialogTitle>
+          </DialogHeader>
+          <form
+            className="space-y-3"
+            onSubmit={(e) => {
+              e.preventDefault();
+              renewRental.mutate();
+            }}
+          >
+            {rental?.status !== "active" ? (
+              <div>
+                <Label>New start date</Label>
+                <Input
+                  type="date"
+                  value={renewForm.startDate}
+                  onChange={(e) =>
+                    setRenewForm((f) => ({ ...f, startDate: e.target.value }))
+                  }
+                  required
+                />
+              </div>
+            ) : null}
+            <div>
+              <Label>New end date</Label>
+              <Input
+                type="date"
+                value={renewForm.endDate}
+                onChange={(e) =>
+                  setRenewForm((f) => ({ ...f, endDate: e.target.value }))
+                }
+                required
+              />
+            </div>
+            <div>
+              <Label>Monthly rent (ETB)</Label>
+              <Input
+                type="number"
+                min={0}
+                step="0.01"
+                value={renewForm.monthlyRent}
+                onChange={(e) =>
+                  setRenewForm((f) => ({ ...f, monthlyRent: e.target.value }))
+                }
+              />
+            </div>
+            <div>
+              <Label>Rental agreement (optional)</Label>
+              <Input
+                type="file"
+                accept=".pdf,.doc,.docx,image/*"
+                onChange={(e) =>
+                  setRenewForm((f) => ({
+                    ...f,
+                    agreementFile: e.target.files?.[0] ?? null,
+                  }))
+                }
+              />
+              {renewForm.agreementFile ? (
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {renewForm.agreementFile.name}
+                </p>
+              ) : (
+                <p className="mt-1 text-xs text-muted-foreground">
+                  PDF, Word, or image. Leave empty to keep the current file.
+                </p>
+              )}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              {rental?.status === "active"
+                ? "Extends the current agreement. Property stays rented."
+                : "Creates a new agreement. Previous payments and history stay on the old record. Tenant returns to Active."}
+            </p>
+            <Button
+              type="submit"
+              className="w-full"
+              disabled={renewRental.isPending}
+            >
+              {renewRental.isPending ? "Renewing…" : "Confirm renewal"}
+            </Button>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={terminateOpen} onOpenChange={setTerminateOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>End rental early</DialogTitle>
+            <DialogDescription>
+              {rental
+                ? `Terminate agreement ${rental.agreementNumber ?? ""} for ${propertyLabel(rental.property)}. The property becomes Available, the tenant becomes a Former Tenant, and payment history is kept.`
+                : "Terminate this rental agreement early."}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2 py-2">
+            <Label htmlFor="terminate-date">Actual termination date</Label>
+            <Input
+              id="terminate-date"
+              type="date"
+              value={terminateDate}
+              onChange={(e) => setTerminateDate(e.target.value)}
+              required
+            />
+          </div>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setTerminateOpen(false)}
+              disabled={terminateRental.isPending}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              disabled={terminateRental.isPending || !terminateDate}
+              onClick={() => terminateRental.mutate()}
+            >
+              {terminateRental.isPending
+                ? "Ending…"
+                : "Confirm termination"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

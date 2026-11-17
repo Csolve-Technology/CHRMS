@@ -143,4 +143,36 @@ export class SalesService {
       return sale;
     });
   }
+
+  async remove(id: string) {
+    return this.prisma.$transaction(async (tx) => {
+      const sale = await tx.sale.findUnique({
+        where: { id },
+        select: { id: true, propertyId: true },
+      });
+      if (!sale) throw new NotFoundException('Sale not found');
+
+      const deleted = await tx.sale.delete({ where: { id } });
+      const otherOpen = await tx.sale.count({
+        where: {
+          propertyId: sale.propertyId,
+          status: { not: 'cancelled' },
+        },
+      });
+      if (otherOpen === 0) {
+        const activeRental = await tx.rental.count({
+          where: { propertyId: sale.propertyId, status: 'active' },
+        });
+        await tx.property.update({
+          where: { id: sale.propertyId },
+          data: {
+            status: activeRental
+              ? PropertyStatus.rented
+              : PropertyStatus.available,
+          },
+        });
+      }
+      return deleted;
+    });
+  }
 }

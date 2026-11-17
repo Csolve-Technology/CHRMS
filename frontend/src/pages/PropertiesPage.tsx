@@ -11,6 +11,13 @@ import {
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import {
   Select,
   SelectContent,
@@ -48,6 +55,7 @@ import {
 import { toast } from "@/hooks/use-toast";
 import { TablePagination } from "@/components/chrms/TablePagination";
 import { buildPageParams, Paginated } from "@/lib/pagination";
+import { KEBELES } from "@/lib/kebeles";
 import { propertyLabel } from "@/lib/property-label";
 
 type PropertyRow = {
@@ -60,6 +68,18 @@ type PropertyRow = {
   status: string;
   assignee: string | null;
   rooms: number | null;
+  area?: number;
+};
+
+type EditForm = {
+  houseNumber: string;
+  woreda: string;
+  kebele: string;
+  type: string;
+  category: string;
+  status: string;
+  rooms: string;
+  area: string;
 };
 
 export default function PropertiesPage() {
@@ -71,6 +91,18 @@ export default function PropertiesPage() {
   const [page, setPage] = useState(1);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<PropertyRow | null>(null);
+  const [editing, setEditing] = useState<PropertyRow | null>(null);
+  const [editForm, setEditForm] = useState<EditForm>({
+    houseNumber: "",
+    woreda: "",
+    kebele: "",
+    type: "residential",
+    category: "",
+    status: "available",
+    rooms: "",
+    area: "",
+  });
+  const [savingEdit, setSavingEdit] = useState(false);
 
   useEffect(() => {
     const t = setTimeout(() => {
@@ -115,6 +147,64 @@ export default function PropertiesPage() {
 
   const rows = data?.items ?? [];
   const woredas = allWoredasQ.data ?? [];
+
+  const startEdit = async (row: PropertyRow) => {
+    try {
+      const res = await api.get<{
+        property: PropertyRow & { area?: number | string };
+      }>(`/properties/${row.id}`);
+      const p = res.data.property;
+      setEditing(row);
+      setEditForm({
+        houseNumber: p.houseNumber ?? row.houseNumber,
+        woreda: p.woreda ?? row.woreda,
+        kebele: p.kebele ?? row.kebele,
+        type: p.type ?? row.type,
+        category: p.category ?? row.category ?? "",
+        status: p.status ?? row.status,
+        rooms: p.rooms != null ? String(p.rooms) : "",
+        area: p.area != null ? String(p.area) : "",
+      });
+    } catch (err) {
+      toast({
+        title: "Failed to load property",
+        description: getApiErrorMessage(err),
+        variant: "destructive",
+      });
+    }
+  };
+
+  const submitEdit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editing) return;
+    try {
+      setSavingEdit(true);
+      await api.put(`/properties/${editing.id}`, {
+        houseNumber: editForm.houseNumber.trim(),
+        woreda: editForm.woreda.trim(),
+        kebele: editForm.kebele,
+        type: editForm.type,
+        category: editForm.category || null,
+        status: editForm.status,
+        rooms:
+          editForm.type === "residential" && editForm.rooms !== ""
+            ? Number(editForm.rooms)
+            : null,
+        area: editForm.area !== "" ? Number(editForm.area) : undefined,
+      });
+      toast({ title: "Property updated" });
+      setEditing(null);
+      refetch();
+    } catch (err) {
+      toast({
+        title: "Failed to update property",
+        description: getApiErrorMessage(err),
+        variant: "destructive",
+      });
+    } finally {
+      setSavingEdit(false);
+    }
+  };
 
   const handleDelete = async (row: PropertyRow) => {
     try {
@@ -278,11 +368,14 @@ export default function PropertiesPage() {
                               </Link>
                             </DropdownMenuItem>
                             {hasPermission("properties.write") ? (
-                              <DropdownMenuItem asChild>
-                                <Link to={`/housing/property/${row.id}`}>
-                                  <Pencil className="mr-2 h-4 w-4" />
-                                  Open record
-                                </Link>
+                              <DropdownMenuItem
+                                onSelect={(e) => {
+                                  e.preventDefault();
+                                  startEdit(row);
+                                }}
+                              >
+                                <Pencil className="mr-2 h-4 w-4" />
+                                Edit
                               </DropdownMenuItem>
                             ) : null}
                             <DropdownMenuSeparator />
@@ -319,6 +412,159 @@ export default function PropertiesPage() {
           ) : null}
         </CardContent>
       </Card>
+
+      <Dialog
+        open={!!editing}
+        onOpenChange={(open) => {
+          if (!open) setEditing(null);
+        }}
+      >
+        <DialogContent className="max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Edit property</DialogTitle>
+          </DialogHeader>
+          <form onSubmit={submitEdit} className="grid grid-cols-2 gap-3">
+            <div>
+              <Label>House number</Label>
+              <Input
+                value={editForm.houseNumber}
+                onChange={(e) =>
+                  setEditForm((f) => ({ ...f, houseNumber: e.target.value }))
+                }
+                required
+              />
+            </div>
+            <div>
+              <Label>City</Label>
+              <Input
+                value={editForm.woreda}
+                onChange={(e) =>
+                  setEditForm((f) => ({ ...f, woreda: e.target.value }))
+                }
+                required
+              />
+            </div>
+            <div className="col-span-2">
+              <Label>Kebele</Label>
+              <Select
+                value={editForm.kebele}
+                onValueChange={(v) =>
+                  setEditForm((f) => ({ ...f, kebele: v }))
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select kebele" />
+                </SelectTrigger>
+                <SelectContent>
+                  {KEBELES.map((k) => (
+                    <SelectItem key={k} value={k}>
+                      {k}
+                    </SelectItem>
+                  ))}
+                  {editForm.kebele &&
+                  !(KEBELES as readonly string[]).includes(editForm.kebele) ? (
+                    <SelectItem value={editForm.kebele}>
+                      {editForm.kebele}
+                    </SelectItem>
+                  ) : null}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label>Type</Label>
+              <Select
+                value={editForm.type}
+                onValueChange={(v) =>
+                  setEditForm((f) => ({
+                    ...f,
+                    type: v,
+                    category: v === "commercial" ? f.category : f.category,
+                  }))
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="residential">Residential</SelectItem>
+                  <SelectItem value="commercial">Commercial</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label>Category</Label>
+              <Select
+                value={editForm.category || "none"}
+                onValueChange={(v) =>
+                  setEditForm((f) => ({
+                    ...f,
+                    category: v === "none" ? "" : v,
+                  }))
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">None</SelectItem>
+                  <SelectItem value="saving">Saving</SelectItem>
+                  <SelectItem value="kebele">Kebele</SelectItem>
+                  <SelectItem value="condominium">Condominium</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label>Status</Label>
+              <Select
+                value={editForm.status}
+                onValueChange={(v) =>
+                  setEditForm((f) => ({ ...f, status: v }))
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="available">Available</SelectItem>
+                  <SelectItem value="rented">Rented</SelectItem>
+                  <SelectItem value="sold">Sold</SelectItem>
+                  <SelectItem value="maintenance">Maintenance</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label>Area (m²)</Label>
+              <Input
+                type="number"
+                min={0}
+                step="0.01"
+                value={editForm.area}
+                onChange={(e) =>
+                  setEditForm((f) => ({ ...f, area: e.target.value }))
+                }
+              />
+            </div>
+            {editForm.type === "residential" ? (
+              <div className="col-span-2">
+                <Label>Rooms</Label>
+                <Input
+                  type="number"
+                  min={0}
+                  value={editForm.rooms}
+                  onChange={(e) =>
+                    setEditForm((f) => ({ ...f, rooms: e.target.value }))
+                  }
+                />
+              </div>
+            ) : null}
+            <div className="col-span-2">
+              <Button type="submit" className="w-full" disabled={savingEdit}>
+                {savingEdit ? "Saving…" : "Save changes"}
+              </Button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
 
       {deleteTarget ? (
         <ConfirmActionDialog

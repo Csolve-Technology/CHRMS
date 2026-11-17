@@ -16,6 +16,8 @@ import { SettingsService } from '../settings/settings.service';
 import {
   RENTAL_STATUSES,
   SECURITY_DEPOSIT_METHOD,
+  TENANT_STATUS_ACTIVE,
+  TENANT_STATUS_FORMER,
   isSecurityDepositPayment,
   type RentalStatus,
 } from './rental-payment.constants';
@@ -26,6 +28,8 @@ import {
   getMonthRentStatus,
 } from './rental-overdue.util';
 import { CreateRentalDto } from './dto/create-rental.dto';
+import { RenewRentalDto } from './dto/renew-rental.dto';
+import { TerminateRentalDto } from './dto/terminate-rental.dto';
 import { UpdateRentalDto } from './dto/update-rental.dto';
 
 @Injectable()
@@ -77,6 +81,69 @@ export class RentalsService {
     }
   }
 
+  private startOfDay(d: Date) {
+    const x = new Date(d);
+    x.setHours(0, 0, 0, 0);
+    return x;
+  }
+
+  private async syncTenantAfterRentalChange(
+    tx: Prisma.TransactionClient,
+    tenantId: string,
+  ) {
+    const activeCount = await tx.rental.count({
+      where: { tenantId, status: 'active' },
+    });
+    await tx.tenant.update({
+      where: { id: tenantId },
+      data: {
+        status:
+          activeCount > 0 ? TENANT_STATUS_ACTIVE : TENANT_STATUS_FORMER,
+      },
+    });
+  }
+
+  /**
+   * Mark active leases past their end date as expired, free the property,
+   * and move tenants without other active leases to former.
+   */
+  async expireDueRentals(asOf: Date = new Date()) {
+    const today = this.startOfDay(asOf);
+    const due = await this.prisma.rental.findMany({
+      where: {
+        status: 'active',
+        endDate: { not: null, lte: today },
+      },
+      select: { id: true, propertyId: true, tenantId: true },
+    });
+    if (due.length === 0) return { expired: 0 };
+
+    await this.prisma.$transaction(async (tx) => {
+      for (const r of due) {
+        await tx.rental.update({
+          where: { id: r.id },
+          data: { status: 'expired' },
+        });
+        const otherActive = await tx.rental.count({
+          where: {
+            propertyId: r.propertyId,
+            status: 'active',
+            NOT: { id: r.id },
+          },
+        });
+        if (otherActive === 0) {
+          await tx.property.update({
+            where: { id: r.propertyId },
+            data: { status: PropertyStatus.available },
+          });
+        }
+        await this.syncTenantAfterRentalChange(tx, r.tenantId);
+      }
+    });
+
+    return { expired: due.length };
+  }
+
   /** Record / sync the security-deposit payment (held, not rent). */
   private async syncDepositPayment(
     tx: Prisma.TransactionClient,
@@ -118,6 +185,7 @@ export class RentalsService {
   }
 
   async findAll(params: PaginationQuery = {}) {
+    await this.expireDueRentals();
     const { page, pageSize, skip, take } = parsePagination(params);
     const [rows, total] = await Promise.all([
       this.prisma.rental.findMany({
@@ -213,6 +281,7 @@ export class RentalsService {
   }
 
   async findOne(id: string) {
+    await this.expireDueRentals();
     const r = await this.prisma.rental.findUnique({
       where: { id },
       include: {
@@ -353,6 +422,10 @@ export class RentalsService {
         where: { id: dto.propertyId },
         data: { status: PropertyStatus.rented },
       });
+      await tx.tenant.update({
+        where: { id: dto.tenantId },
+        data: { status: TENANT_STATUS_ACTIVE },
+      });
       return rental;
     });
   }
@@ -375,6 +448,7 @@ export class RentalsService {
           select: {
             id: true,
             propertyId: true,
+            tenantId: true,
             status: true,
             monthlyRent: true,
             deposit: true,
@@ -423,30 +497,30 @@ export class RentalsService {
             }
           }
 
-          if (nextStatus === 'completed') {
+          if (nextStatus === 'completed' || nextStatus === 'expired') {
             const end =
               dto.endDate !== undefined
                 ? new Date(dto.endDate)
                 : existing.endDate;
-            if (!end) {
+            if (!end && nextStatus === 'completed') {
               throw new BadRequestException(
                 'Set an end date before marking the rental completed',
               );
             }
-            const endDay = new Date(end);
-            endDay.setHours(0, 0, 0, 0);
-            const today = new Date();
-            today.setHours(0, 0, 0, 0);
-            if (today < endDay) {
-              throw new BadRequestException(
-                'Cannot complete before the lease end date. Use cancelled if the lease ended early.',
-              );
+            if (nextStatus === 'completed' && end) {
+              const endDay = this.startOfDay(end);
+              const today = this.startOfDay(new Date());
+              if (today < endDay) {
+                throw new BadRequestException(
+                  'Cannot complete before the lease end date. Use terminate for early ending.',
+                );
+              }
             }
           }
 
-          // Cancelled can happen any day; stamp end date if missing
+          // Cancelled / expired early: stamp end date if missing
           if (
-            nextStatus === 'cancelled' &&
+            (nextStatus === 'cancelled' || nextStatus === 'expired') &&
             dto.endDate === undefined &&
             !existing.endDate
           ) {
@@ -480,6 +554,7 @@ export class RentalsService {
                   : PropertyStatus.available,
             },
           });
+          await this.syncTenantAfterRentalChange(tx, existing.tenantId);
         }
 
         return rental;
@@ -492,19 +567,194 @@ export class RentalsService {
     }
   }
 
-  async remove(id: string) {
-    return this.prisma.$transaction(async (tx) => {
-      const rental = await tx.rental.findUnique({
-        where: { id },
-        select: { id: true, propertyId: true },
-      });
-      if (!rental) throw new NotFoundException('Rental not found');
+  /** End an active lease early; records the termination date and frees the property. */
+  async terminate(id: string, dto: TerminateRentalDto = {}) {
+    const rental = await this.prisma.rental.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        status: true,
+        propertyId: true,
+        tenantId: true,
+        startDate: true,
+        endDate: true,
+      },
+    });
+    if (!rental) throw new NotFoundException('Rental not found');
+    if (rental.status !== 'active') {
+      throw new BadRequestException('Only active rentals can be terminated');
+    }
 
-      const deleted = await tx.rental.delete({ where: { id } });
+    const terminatedAt = this.startOfDay(
+      dto.terminatedAt ? new Date(dto.terminatedAt) : new Date(),
+    );
+    const start = this.startOfDay(rental.startDate);
+    if (terminatedAt < start) {
+      throw new BadRequestException(
+        'Termination date cannot be before the lease start date',
+      );
+    }
+    if (rental.endDate) {
+      const scheduledEnd = this.startOfDay(rental.endDate);
+      if (terminatedAt > scheduledEnd) {
+        throw new BadRequestException(
+          'Termination date cannot be after the scheduled end date',
+        );
+      }
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      const updated = await tx.rental.update({
+        where: { id },
+        data: {
+          status: 'cancelled',
+          endDate: terminatedAt,
+        },
+        include: { tenant: true, property: true },
+      });
       await tx.property.update({
         where: { id: rental.propertyId },
         data: { status: PropertyStatus.available },
       });
+      await this.syncTenantAfterRentalChange(tx, rental.tenantId);
+      return updated;
+    });
+  }
+
+  /**
+   * Renew an active lease (extend end date) or start a new agreement
+   * after an expired/cancelled/completed lease.
+   * Optional agreement file replaces/sets the lease document.
+   */
+  async renew(
+    id: string,
+    dto: RenewRentalDto,
+    file?: Express.Multer.File,
+  ) {
+    await this.expireDueRentals();
+    const existing = await this.prisma.rental.findUnique({
+      where: { id },
+      include: { property: true, tenant: true },
+    });
+    if (!existing) throw new NotFoundException('Rental not found');
+
+    const newEnd = this.startOfDay(new Date(dto.endDate));
+    const monthlyRent =
+      dto.monthlyRent != null
+        ? dto.monthlyRent
+        : Number(existing.monthlyRent);
+    const agreementFile = file
+      ? this.filePublicPath(file.filename)
+      : undefined;
+
+    if (existing.status === 'active') {
+      const currentEnd = existing.endDate
+        ? this.startOfDay(existing.endDate)
+        : this.startOfDay(new Date());
+      if (newEnd <= currentEnd) {
+        throw new BadRequestException(
+          'New end date must be after the current lease end date',
+        );
+      }
+      return this.prisma.rental.update({
+        where: { id },
+        data: {
+          endDate: newEnd,
+          monthlyRent,
+          ...(agreementFile ? { agreementFile } : {}),
+        },
+        include: { tenant: true, property: true },
+      });
+    }
+
+    if (!['expired', 'cancelled', 'completed'].includes(existing.status)) {
+      throw new BadRequestException(
+        'Only active, expired, cancelled, or completed rentals can be renewed',
+      );
+    }
+
+    const property = await this.prisma.property.findUnique({
+      where: { id: existing.propertyId },
+      include: { rentals: { where: { status: 'active' } } },
+    });
+    if (!property) throw new NotFoundException('Property not found');
+    if (property.rentals.length > 0) {
+      throw new BadRequestException(
+        'Property already has an active rental',
+      );
+    }
+    if (
+      property.status !== PropertyStatus.available &&
+      property.status !== PropertyStatus.rented
+    ) {
+      throw new BadRequestException(
+        'Property must be available to renew this rental',
+      );
+    }
+
+    let start = dto.startDate
+      ? this.startOfDay(new Date(dto.startDate))
+      : existing.endDate
+        ? (() => {
+            const d = this.startOfDay(existing.endDate);
+            d.setDate(d.getDate() + 1);
+            return d;
+          })()
+        : this.startOfDay(new Date());
+
+    if (newEnd <= start) {
+      throw new BadRequestException(
+        'New end date must be after the new start date',
+      );
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      const agreementNumber = await this.nextAgreementNumber(tx);
+      const rental = await tx.rental.create({
+        data: {
+          propertyId: existing.propertyId,
+          tenantId: existing.tenantId,
+          agreementNumber,
+          agreementFile: agreementFile ?? existing.agreementFile,
+          startDate: start,
+          endDate: newEnd,
+          monthlyRent,
+          deposit: existing.deposit,
+          status: 'active',
+        },
+        include: { tenant: true, property: true },
+      });
+      await tx.property.update({
+        where: { id: existing.propertyId },
+        data: { status: PropertyStatus.rented },
+      });
+      await tx.tenant.update({
+        where: { id: existing.tenantId },
+        data: { status: TENANT_STATUS_ACTIVE },
+      });
+      return rental;
+    });
+  }
+
+  async remove(id: string) {
+    return this.prisma.$transaction(async (tx) => {
+      const rental = await tx.rental.findUnique({
+        where: { id },
+        select: { id: true, propertyId: true, tenantId: true, status: true },
+      });
+      if (!rental) throw new NotFoundException('Rental not found');
+
+      const deleted = await tx.rental.delete({ where: { id } });
+      const otherActive = await tx.rental.count({
+        where: { propertyId: rental.propertyId, status: 'active' },
+      });
+      if (otherActive === 0) {
+        await tx.property.update({
+          where: { id: rental.propertyId },
+          data: { status: PropertyStatus.available },
+        });
+      }
+      await this.syncTenantAfterRentalChange(tx, rental.tenantId);
       return deleted;
     });
   }

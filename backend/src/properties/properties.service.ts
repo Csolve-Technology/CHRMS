@@ -116,11 +116,49 @@ export class PropertiesService {
   }
 
   async findOne(id: string) {
+    // Auto-expire leases past their end date so property status stays in sync.
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const dueRentals = await this.prisma.rental.findMany({
+      where: {
+        propertyId: id,
+        status: 'active',
+        endDate: { not: null, lte: today },
+      },
+      select: { id: true, tenantId: true },
+    });
+    if (dueRentals.length > 0) {
+      await this.prisma.$transaction(async (tx) => {
+        for (const r of dueRentals) {
+          await tx.rental.update({
+            where: { id: r.id },
+            data: { status: 'expired' },
+          });
+          const stillActive = await tx.rental.count({
+            where: {
+              tenantId: r.tenantId,
+              status: 'active',
+              NOT: { id: r.id },
+            },
+          });
+          await tx.tenant.update({
+            where: { id: r.tenantId },
+            data: { status: stillActive > 0 ? 'active' : 'former' },
+          });
+        }
+        await tx.property.update({
+          where: { id },
+          data: { status: PropertyStatus.available },
+        });
+      });
+    }
+
     const p = await this.prisma.property.findUnique({
       where: { id },
       include: {
         rentals: {
-          where: { status: 'active' },
+          orderBy: [{ createdAt: 'desc' }],
+          take: 10,
           include: { tenant: true, payments: true },
         },
         sales: {
@@ -134,7 +172,8 @@ export class PropertiesService {
     });
     if (!p) throw new NotFoundException('Property not found');
 
-    const activeRental = p.rentals[0];
+    const activeRental = p.rentals.find((r) => r.status === 'active') ?? null;
+    const latestRental = activeRental ?? p.rentals[0] ?? null;
     const sale = p.sales[0];
 
     let paymentSummary: {
@@ -186,25 +225,41 @@ export class PropertiesService {
         latitude: p.latitude != null ? Number(p.latitude) : null,
         longitude: p.longitude != null ? Number(p.longitude) : null,
       },
-      tenant: activeRental
+      tenant: latestRental
         ? {
-            id: activeRental.tenant.id,
-            fullName: activeRental.tenant.fullName,
-            phone: activeRental.tenant.phone,
-            nationalId: activeRental.tenant.nationalId,
-            address: activeRental.tenant.address,
+            id: latestRental.tenant.id,
+            fullName: latestRental.tenant.fullName,
+            phone: latestRental.tenant.phone,
+            nationalId: latestRental.tenant.nationalId,
+            address: latestRental.tenant.address,
+            status: latestRental.tenant.status,
             rental: {
-              id: activeRental.id,
-              agreementNumber: activeRental.agreementNumber,
-              agreementFile: activeRental.agreementFile,
-              startDate: activeRental.startDate,
-              endDate: activeRental.endDate,
-              monthlyRent: Number(activeRental.monthlyRent),
-              deposit: activeRental.deposit ? Number(activeRental.deposit) : null,
-              status: activeRental.status,
+              id: latestRental.id,
+              agreementNumber: latestRental.agreementNumber,
+              agreementFile: latestRental.agreementFile,
+              startDate: latestRental.startDate,
+              endDate: latestRental.endDate,
+              monthlyRent: Number(latestRental.monthlyRent),
+              deposit: latestRental.deposit
+                ? Number(latestRental.deposit)
+                : null,
+              status: latestRental.status,
             },
           }
         : null,
+      rentalHistory: p.rentals.map((r) => ({
+        id: r.id,
+        status: r.status,
+        agreementNumber: r.agreementNumber,
+        startDate: r.startDate,
+        endDate: r.endDate,
+        monthlyRent: Number(r.monthlyRent),
+        tenant: {
+          id: r.tenant.id,
+          fullName: r.tenant.fullName,
+          status: r.tenant.status,
+        },
+      })),
       sale: sale
         ? (() => {
             const m = saleTotals(sale.totalPrice, sale.payments);

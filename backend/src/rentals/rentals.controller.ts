@@ -19,6 +19,8 @@ import { RequirePermissions } from '../common/decorators/permissions.decorator';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { PermissionsGuard } from '../common/guards/permissions.guard';
 import { CreateRentalDto } from './dto/create-rental.dto';
+import { RenewRentalDto } from './dto/renew-rental.dto';
+import { TerminateRentalDto } from './dto/terminate-rental.dto';
 import { UpdateRentalDto } from './dto/update-rental.dto';
 import { RentalsService } from './rentals.service';
 
@@ -59,6 +61,12 @@ export class RentalsController {
     return this.rentals.findAll({ page, pageSize });
   }
 
+  @Post('expire-due')
+  @RequirePermissions(Permission.RENTALS_WRITE)
+  expireDue() {
+    return this.rentals.expireDueRentals();
+  }
+
   @Get(':id')
   @RequirePermissions(Permission.RENTALS_READ)
   findOne(@Param('id') id: string) {
@@ -84,6 +92,23 @@ export class RentalsController {
     @UploadedFile() file?: Express.Multer.File,
   ) {
     return this.rentals.update(id, dto, file);
+  }
+
+  @Post(':id/terminate')
+  @RequirePermissions(Permission.RENTALS_WRITE)
+  terminate(@Param('id') id: string, @Body() dto: TerminateRentalDto) {
+    return this.rentals.terminate(id, dto);
+  }
+
+  @Post(':id/renew')
+  @RequirePermissions(Permission.RENTALS_WRITE)
+  @UseInterceptors(agreementUpload)
+  renew(
+    @Param('id') id: string,
+    @Body() dto: RenewRentalDto,
+    @UploadedFile() file?: Express.Multer.File,
+  ) {
+    return this.rentals.renew(id, dto, file);
   }
 
   @Delete(':id')
