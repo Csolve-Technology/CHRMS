@@ -95,7 +95,6 @@ export default function TenantsPage() {
     gender: "male",
     phone: "",
     nationalId: "",
-    address: "",
     familySize: "1",
     status: "active",
   });
@@ -133,7 +132,6 @@ export default function TenantsPage() {
       gender: "male",
       phone: "",
       nationalId: "",
-      address: "",
       familySize: "1",
       status: "active",
     });
@@ -147,7 +145,6 @@ export default function TenantsPage() {
         gender: form.gender,
         phone: form.phone,
         nationalId: form.nationalId || undefined,
-        address: form.address || undefined,
         familySize: Number(form.familySize),
         status: form.status,
       });
@@ -174,7 +171,6 @@ export default function TenantsPage() {
         gender: detail.gender ?? "male",
         phone: detail.phone ?? tenant.phone,
         nationalId: detail.nationalId ?? "",
-        address: detail.address ?? "",
         familySize: String(detail.familySize ?? 1),
         status: detail.status ?? tenant.status ?? "active",
       });
@@ -196,7 +192,6 @@ export default function TenantsPage() {
         gender: form.gender,
         phone: form.phone,
         nationalId: form.nationalId.trim() || undefined,
-        address: form.address.trim() || undefined,
         familySize: Number(form.familySize),
         status: form.status,
       });
@@ -301,16 +296,6 @@ export default function TenantsPage() {
                   }
                 />
               </div>
-              <div className="col-span-2">
-                <Label>Address</Label>
-                <Input
-                  value={form.address}
-                  onChange={(e) =>
-                    setForm((f) => ({ ...f, address: e.target.value }))
-                  }
-                  placeholder="City, kebele, house / street"
-                />
-              </div>
               <div>
                 <Label>Family size</Label>
                 <Input
@@ -357,7 +342,7 @@ export default function TenantsPage() {
         <CardHeader>
           <CardTitle>Directory</CardTitle>
           <CardDescription>
-            Newest first — search by name, phone, ID, or address
+            Newest first — search by name, phone, or ID
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -382,7 +367,6 @@ export default function TenantsPage() {
                     <TableRow>
                       <TableHead>Name</TableHead>
                       <TableHead>Phone</TableHead>
-                      <TableHead>Address</TableHead>
                       <TableHead>House no.</TableHead>
                       <TableHead>Status</TableHead>
                       <TableHead className="text-right">Actions</TableHead>
@@ -391,13 +375,13 @@ export default function TenantsPage() {
                   <TableBody>
                     {isLoading ? (
                       <TableRow>
-                        <TableCell colSpan={6} className="text-center py-8">
+                        <TableCell colSpan={5} className="text-center py-8">
                           Loading…
                         </TableCell>
                       </TableRow>
                     ) : rows.length === 0 ? (
                       <TableRow>
-                        <TableCell colSpan={6} className="text-center py-8">
+                        <TableCell colSpan={5} className="text-center py-8">
                           No tenants
                         </TableCell>
                       </TableRow>
@@ -408,9 +392,6 @@ export default function TenantsPage() {
                             {t.fullName}
                           </TableCell>
                           <TableCell>{t.phone}</TableCell>
-                          <TableCell className="max-w-[220px] truncate">
-                            {t.address?.trim() || "—"}
-                          </TableCell>
                           <TableCell>
                             {propertyLabel({
                               houseNumber: t.propertyHouseNumber,
@@ -548,16 +529,6 @@ export default function TenantsPage() {
                 onChange={(e) =>
                   setForm((f) => ({ ...f, nationalId: e.target.value }))
                 }
-              />
-            </div>
-            <div className="col-span-2">
-              <Label>Address</Label>
-              <Input
-                value={form.address}
-                onChange={(e) =>
-                  setForm((f) => ({ ...f, address: e.target.value }))
-                }
-                placeholder="City, kebele, house / street"
               />
             </div>
             <div>

@@ -435,7 +435,9 @@ export class RentalsService {
 
     const data: Prisma.RentalUpdateInput = {};
     if (dto.startDate !== undefined) data.startDate = new Date(dto.startDate);
-    if (dto.endDate !== undefined) data.endDate = new Date(dto.endDate);
+    if (dto.endDate !== undefined) {
+      data.endDate = dto.endDate ? new Date(dto.endDate) : null;
+    }
     if (dto.monthlyRent !== undefined) data.monthlyRent = dto.monthlyRent;
     if (dto.deposit !== undefined) data.deposit = dto.deposit;
     if (dto.status !== undefined) data.status = dto.status;

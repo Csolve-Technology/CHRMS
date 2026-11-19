@@ -20,6 +20,11 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { ConfirmActionDialog } from "@/components/chrms/ConfirmActionDialog";
 import {
+  SalePaymentFields,
+  salePayloadFromForm,
+  type SalePaymentFormValues,
+} from "@/components/chrms/SalePaymentFields";
+import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -44,6 +49,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { api, getApiErrorMessage } from "@/services/api";
 import { propertyLabel } from "@/lib/property-label";
@@ -113,6 +119,8 @@ type SaleRow = {
   status: string;
   startDate: string;
   durationMonths: number;
+  paymentMode?: "full" | "partial";
+  monthlyInstallment?: number;
 };
 
 type TenantOption = { id: string; fullName: string; status: string };
@@ -129,17 +137,22 @@ const emptyRentForm = {
   tenantId: "",
   startDate: "",
   endDate: "",
+  noFixedEnd: false,
   monthlyRent: "",
   deposit: "",
   status: "active",
 };
 
-const emptySaleForm = {
+const emptySaleForm: SalePaymentFormValues & {
+  propertyId: string;
+  buyerId: string;
+} = {
   propertyId: "",
   buyerId: "",
   totalPrice: "",
-  downPayment: "",
-  durationMonths: "",
+  paymentMode: "partial",
+  initialPaid: "",
+  durationMonths: "12",
   startDate: "",
 };
 
@@ -332,7 +345,12 @@ export default function RentalsPage() {
       fd.append("tenantId", rentForm.tenantId);
     }
     fd.append("startDate", rentForm.startDate);
-    if (rentForm.endDate) fd.append("endDate", rentForm.endDate);
+    if (!rentForm.noFixedEnd && rentForm.endDate) {
+      fd.append("endDate", rentForm.endDate);
+    } else if (!includeIds && rentForm.noFixedEnd) {
+      // Clear end date when editing to open-ended
+      fd.append("endDate", "");
+    }
     fd.append("monthlyRent", rentForm.monthlyRent);
     if (!includeIds) fd.append("status", rentForm.status);
     if (agreementFile) fd.append("agreementFile", agreementFile);
@@ -343,18 +361,37 @@ export default function RentalsPage() {
     e.preventDefault();
     try {
       if (txType === "rent") {
+        if (!rentForm.noFixedEnd && !rentForm.endDate) {
+          toast({
+            title: "End date required",
+            description:
+              "Select an end date or mark Unknown / No Fixed End Date.",
+            variant: "destructive",
+          });
+          return;
+        }
         await api.post("/rentals", buildRentFormData(true));
         toast({ title: "Rental created" });
         setTab("rentals");
         refetchRentals();
       } else {
+        const salePayload = salePayloadFromForm(saleForm);
+        if (
+          saleForm.paymentMode === "partial" &&
+          salePayload.downPayment >= salePayload.totalPrice
+        ) {
+          toast({
+            title: "Invalid initial payment",
+            description:
+              "For partially paid sales, the initial amount must be less than the total price.",
+            variant: "destructive",
+          });
+          return;
+        }
         await api.post("/sales", {
           propertyId: saleForm.propertyId,
           buyerId: saleForm.buyerId,
-          totalPrice: Number(saleForm.totalPrice),
-          downPayment: Number(saleForm.downPayment),
-          durationMonths: Number(saleForm.durationMonths),
-          startDate: saleForm.startDate,
+          ...salePayload,
         });
         toast({ title: "Sale created" });
         setTab("sales");
@@ -383,6 +420,7 @@ export default function RentalsPage() {
       tenantId: r.tenant.id,
       startDate: r.startDate.slice(0, 10),
       endDate: r.endDate ? r.endDate.slice(0, 10) : "",
+      noFixedEnd: !r.endDate,
       monthlyRent: String(r.monthlyRent),
       deposit: r.deposit ? String(r.deposit) : "",
       status: r.status,
@@ -571,15 +609,41 @@ export default function RentalsPage() {
                       required
                     />
                   </div>
-                  <div>
+                  <div className="col-span-2 space-y-2">
                     <Label>End date</Label>
-                    <Input
-                      type="date"
-                      value={rentForm.endDate}
-                      onChange={(e) =>
-                        setRentForm((f) => ({ ...f, endDate: e.target.value }))
-                      }
-                    />
+                    <div className="flex items-center justify-between gap-3 rounded-md border px-3 py-2">
+                      <div>
+                        <p className="text-sm font-medium">
+                          Unknown / No Fixed End Date
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          Leave the lease open-ended
+                        </p>
+                      </div>
+                      <Switch
+                        checked={rentForm.noFixedEnd}
+                        onCheckedChange={(checked) =>
+                          setRentForm((f) => ({
+                            ...f,
+                            noFixedEnd: checked,
+                            endDate: checked ? "" : f.endDate,
+                          }))
+                        }
+                      />
+                    </div>
+                    {!rentForm.noFixedEnd ? (
+                      <Input
+                        type="date"
+                        value={rentForm.endDate}
+                        onChange={(e) =>
+                          setRentForm((f) => ({
+                            ...f,
+                            endDate: e.target.value,
+                          }))
+                        }
+                        required
+                      />
+                    ) : null}
                   </div>
                   <div>
                     <Label>Monthly rent</Label>
@@ -596,7 +660,10 @@ export default function RentalsPage() {
                       required
                     />
                   </div>
-                  {rentForm.startDate && rentForm.monthlyRent ? (
+                  {rentForm.startDate &&
+                  rentForm.monthlyRent &&
+                  !rentForm.noFixedEnd &&
+                  rentForm.endDate ? (
                     <div className="col-span-2 rounded-md border bg-muted/40 px-3 py-2 text-sm">
                       <p className="font-medium">
                         Total expected rent:{" "}
@@ -621,9 +688,6 @@ export default function RentalsPage() {
                         ) === 1
                           ? ""
                           : "s"}
-                        {rentForm.endDate
-                          ? ""
-                          : " (set an end date for the full contract total)"}
                       </p>
                     </div>
                   ) : null}
@@ -670,63 +734,16 @@ export default function RentalsPage() {
                       </SelectContent>
                     </Select>
                   </div>
-                  <div>
-                    <Label>Total price</Label>
-                    <Input
-                      type="number"
-                      min={0}
-                      value={saleForm.totalPrice}
-                      onChange={(e) =>
+                  <div className="col-span-2">
+                    <SalePaymentFields
+                      value={saleForm}
+                      onChange={(next) =>
                         setSaleForm((f) => ({
                           ...f,
-                          totalPrice: e.target.value,
+                          ...next,
                         }))
                       }
-                      required
-                    />
-                  </div>
-                  <div>
-                    <Label>Down payment</Label>
-                    <Input
-                      type="number"
-                      min={0}
-                      value={saleForm.downPayment}
-                      onChange={(e) =>
-                        setSaleForm((f) => ({
-                          ...f,
-                          downPayment: e.target.value,
-                        }))
-                      }
-                      required
-                    />
-                  </div>
-                  <div>
-                    <Label>Duration (months)</Label>
-                    <Input
-                      type="number"
-                      min={1}
-                      value={saleForm.durationMonths}
-                      onChange={(e) =>
-                        setSaleForm((f) => ({
-                          ...f,
-                          durationMonths: e.target.value,
-                        }))
-                      }
-                      required
-                    />
-                  </div>
-                  <div>
-                    <Label>Start date</Label>
-                    <Input
-                      type="date"
-                      value={saleForm.startDate}
-                      onChange={(e) =>
-                        setSaleForm((f) => ({
-                          ...f,
-                          startDate: e.target.value,
-                        }))
-                      }
-                      required
+                      className="grid grid-cols-1 gap-3 sm:grid-cols-2"
                     />
                   </div>
                 </div>
@@ -931,6 +948,7 @@ export default function RentalsPage() {
                           <TableHead className="text-right">
                             Remaining
                           </TableHead>
+                          <TableHead>Payment</TableHead>
                           <TableHead>Status</TableHead>
                           <TableHead className="text-right">Actions</TableHead>
                         </TableRow>
@@ -939,7 +957,7 @@ export default function RentalsPage() {
                         {saleLoading ? (
                           <TableRow>
                             <TableCell
-                              colSpan={7}
+                              colSpan={8}
                               className="text-center py-10"
                             >
                               Loading…
@@ -948,7 +966,7 @@ export default function RentalsPage() {
                         ) : sales.length === 0 ? (
                           <TableRow>
                             <TableCell
-                              colSpan={7}
+                              colSpan={8}
                               className="text-center py-10"
                             >
                               No sales yet
@@ -971,6 +989,12 @@ export default function RentalsPage() {
                               </TableCell>
                               <TableCell className="text-right text-amber-700 whitespace-nowrap">
                                 {etb(s.remaining)}
+                              </TableCell>
+                              <TableCell className="text-sm">
+                                {s.paymentMode === "full" ||
+                                s.durationMonths === 0
+                                  ? "Fully paid"
+                                  : `Partial · ${s.durationMonths} mo.`}
                               </TableCell>
                               <TableCell>
                                 <Badge
@@ -1089,15 +1113,38 @@ export default function RentalsPage() {
                 required
               />
             </div>
-            <div>
+            <div className="col-span-2 space-y-2">
               <Label>End date</Label>
-              <Input
-                type="date"
-                value={rentForm.endDate}
-                onChange={(e) =>
-                  setRentForm((f) => ({ ...f, endDate: e.target.value }))
-                }
-              />
+              <div className="flex items-center justify-between gap-3 rounded-md border px-3 py-2">
+                <div>
+                  <p className="text-sm font-medium">
+                    Unknown / No Fixed End Date
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    Leave the lease open-ended
+                  </p>
+                </div>
+                <Switch
+                  checked={rentForm.noFixedEnd}
+                  onCheckedChange={(checked) =>
+                    setRentForm((f) => ({
+                      ...f,
+                      noFixedEnd: checked,
+                      endDate: checked ? "" : f.endDate,
+                    }))
+                  }
+                />
+              </div>
+              {!rentForm.noFixedEnd ? (
+                <Input
+                  type="date"
+                  value={rentForm.endDate}
+                  onChange={(e) =>
+                    setRentForm((f) => ({ ...f, endDate: e.target.value }))
+                  }
+                  required
+                />
+              ) : null}
             </div>
             <div>
               <Label>Monthly rent</Label>
@@ -1111,7 +1158,10 @@ export default function RentalsPage() {
                 required
               />
             </div>
-            {rentForm.startDate && rentForm.monthlyRent ? (
+            {rentForm.startDate &&
+            rentForm.monthlyRent &&
+            !rentForm.noFixedEnd &&
+            rentForm.endDate ? (
               <div className="col-span-2 rounded-md border bg-muted/40 px-3 py-2 text-sm">
                 <p className="font-medium">
                   Total expected rent:{" "}

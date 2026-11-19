@@ -38,6 +38,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { toast } from "@/hooks/use-toast";
+import { condoRoomTypeLabel } from "@/lib/condo-options";
 import { propertyLabel } from "@/lib/property-label";
 import { estimateRentCoverage } from "@/lib/rent-coverage";
 import {
@@ -97,6 +98,8 @@ type PropertyBundle = {
     woreda: string;
     kebele: string;
     houseNumber: string;
+    blockNumber?: string | null;
+    roomType?: string | null;
     rooms: number | null;
     area: number;
     status: string;
@@ -140,6 +143,14 @@ type PropertyBundle = {
     buyer: { id: string; fullName: string; phone: string };
     downPayment: number;
     durationMonths: number;
+    paymentMode?: "full" | "partial";
+    monthlyInstallment?: number;
+    plannedRemaining?: number;
+    paymentSchedule?: Array<{
+      installment: number;
+      dueDate: string;
+      amount: number;
+    }>;
     startDate: string;
     status: string;
   };
@@ -263,6 +274,14 @@ type SaleDetail = {
   startDate: string;
   durationMonths: number;
   downPayment: number;
+  paymentMode?: "full" | "partial";
+  monthlyInstallment?: number;
+  plannedRemaining?: number;
+  paymentSchedule?: Array<{
+    installment: number;
+    dueDate: string;
+    amount: number;
+  }>;
   totalPrice: number;
   totalPaid: number;
   remaining: number;
@@ -833,8 +852,19 @@ export default function HousingDetailPage() {
                 </DetailField>
                 <DetailField label="City">{property.woreda}</DetailField>
                 <DetailField label="Kebele">{property.kebele}</DetailField>
+                {property.category === "condominium" ? (
+                  <>
+                    <DetailField label="Block number">
+                      {property.blockNumber ?? "—"}
+                    </DetailField>
+                    <DetailField label="Room type">
+                      {condoRoomTypeLabel(property.roomType)}
+                    </DetailField>
+                  </>
+                ) : null}
                 <DetailField label="Area">{property.area} m²</DetailField>
-                {property.type === "residential" ? (
+                {property.type === "residential" &&
+                property.category !== "condominium" ? (
                   <DetailField label="Rooms">
                     {property.rooms ?? "—"}
                   </DetailField>
@@ -888,9 +918,6 @@ export default function HousingDetailPage() {
                 <DetailField label="National ID">
                   {occupant.nationalId ?? "—"}
                 </DetailField>
-                <DetailField label="Address">
-                  {occupant.address ?? "—"}
-                </DetailField>
                 {"status" in occupant && occupant.status ? (
                   <DetailField label="Status">
                     <StatusBadge status={String(occupant.status)} />
@@ -922,11 +949,6 @@ export default function HousingDetailPage() {
                 <DetailField label="Status">
                   <StatusBadge status={tenantOnly.status} />
                 </DetailField>
-                <div className="sm:col-span-2">
-                  <DetailField label="Address">
-                    {tenantOnly.address ?? "—"}
-                  </DetailField>
-                </div>
               </dl>
             ) : (
               <p className="text-sm text-muted-foreground">
@@ -1023,7 +1045,7 @@ export default function HousingDetailPage() {
                 <DetailField label="End">
                   {rental.endDate
                     ? format(new Date(rental.endDate), "MMM d, yyyy")
-                    : "Open"}
+                    : "Unknown / No Fixed End Date"}
                 </DetailField>
                 {rental.paymentStatus ? (
                   <div className="sm:col-span-2">
@@ -1044,15 +1066,27 @@ export default function HousingDetailPage() {
                   <DetailField label="Total price">
                     {etb(sale.totalPrice)}
                   </DetailField>
-                  <DetailField label="Down payment">
-                    {etb(sale.downPayment)}
+                  <DetailField label="Payment">
+                    {sale.paymentMode === "full" || sale.durationMonths === 0
+                      ? "Fully Paid"
+                      : "Partially Paid"}
                   </DetailField>
-                  <DetailField label="Duration">
-                    {sale.durationMonths} months
+                  <DetailField label="Initial paid">
+                    {etb(sale.downPayment)}
                   </DetailField>
                   <DetailField label="Outstanding">
                     {etb(sale.outstandingBalance ?? sale.remaining)}
                   </DetailField>
+                  {sale.paymentMode !== "full" && sale.durationMonths > 0 ? (
+                    <>
+                      <DetailField label="Remaining months">
+                        {sale.durationMonths}
+                      </DetailField>
+                      <DetailField label="Monthly installment">
+                        {etb(sale.monthlyInstallment ?? 0)}
+                      </DetailField>
+                    </>
+                  ) : null}
                   <DetailField label="Start">
                     {format(new Date(sale.startDate), "MMM d, yyyy")}
                   </DetailField>
@@ -1068,6 +1102,37 @@ export default function HousingDetailPage() {
                   remaining={sale.remaining}
                   completionPercentage={sale.completionPercentage}
                 />
+                {sale.paymentSchedule && sale.paymentSchedule.length > 0 ? (
+                  <div className="space-y-2">
+                    <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                      Payment schedule
+                    </p>
+                    <div className="overflow-x-auto rounded-md border">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>#</TableHead>
+                            <TableHead>Due date</TableHead>
+                            <TableHead className="text-right">Amount</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {sale.paymentSchedule.map((row) => (
+                            <TableRow key={row.installment}>
+                              <TableCell>{row.installment}</TableCell>
+                              <TableCell>
+                                {format(new Date(row.dueDate), "MMM d, yyyy")}
+                              </TableCell>
+                              <TableCell className="text-right">
+                                {etb(row.amount)}
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  </div>
+                ) : null}
               </div>
             ) : null}
 

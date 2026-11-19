@@ -63,6 +63,10 @@ model Property {
   woreda      String
   kebele      String
   houseNumber String            @map("house_number")
+  /// Condominium block identifier
+  blockNumber String?           @map("block_number")
+  /// Condominium unit layout: studio | one_bedroom | two_bedroom | three_bedroom
+  roomType    String?           @map("room_type")
   /// Residential only; null for commercial
   rooms       Int?
   area        Decimal           @db.Decimal(12, 2)

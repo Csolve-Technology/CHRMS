@@ -34,6 +34,16 @@ export class UpdatePropertyDto {
 
   @IsOptional()
   @ValidateIf((_, v) => v !== null)
+  @IsString()
+  blockNumber?: string | null;
+
+  @IsOptional()
+  @ValidateIf((_, v) => v !== null)
+  @IsString()
+  roomType?: string | null;
+
+  @IsOptional()
+  @ValidateIf((_, v) => v !== null)
   @IsInt()
   @Min(0)
   rooms?: number | null;

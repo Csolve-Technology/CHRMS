@@ -1,5 +1,10 @@
 import { useAuth } from "@/contexts/AuthContext";
 import { GpsLocationFields } from "@/components/chrms/GpsLocationFields";
+import {
+  SalePaymentFields,
+  salePayloadFromForm,
+  type SalePaymentFormValues,
+} from "@/components/chrms/SalePaymentFields";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -18,10 +23,14 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
+import { Switch } from "@/components/ui/switch";
 import { toast } from "@/hooks/use-toast";
+import {
+  CONDO_ROOM_TYPES,
+  roomsFromCondoRoomType,
+} from "@/lib/condo-options";
 import { KEBELES } from "@/lib/kebeles";
 import { Paginated } from "@/lib/pagination";
-import { propertyLabel } from "@/lib/property-label";
 import { api, getApiErrorMessage } from "@/services/api";
 import { useQuery } from "@tanstack/react-query";
 import {
@@ -43,6 +52,8 @@ const emptyProperty = {
   woreda: "Chiro City",
   kebele: "",
   houseNumber: "",
+  blockNumber: "",
+  roomType: "",
   rooms: "",
   area: "",
   latitude: "",
@@ -54,7 +65,6 @@ const emptyTenant = {
   gender: "male",
   phone: "",
   nationalId: "",
-  address: "",
   familySize: "1",
   status: "active",
 };
@@ -62,14 +72,16 @@ const emptyTenant = {
 const emptyRent = {
   startDate: "",
   endDate: "",
+  noFixedEnd: false,
   monthlyRent: "",
   deposit: "",
 };
 
-const emptySale = {
+const emptySale: SalePaymentFormValues = {
   totalPrice: "",
-  downPayment: "",
-  durationMonths: "",
+  paymentMode: "partial",
+  initialPaid: "",
+  durationMonths: "12",
   startDate: "",
 };
 
@@ -170,10 +182,35 @@ export default function AddPropertyPage() {
     let tenantId: string | null = null;
 
     try {
+      const isCondo = property.category === "condominium";
+      const roomsFromType = isCondo
+        ? roomsFromCondoRoomType(property.roomType)
+        : undefined;
       const roomsValue =
-        property.type === "residential" && property.rooms.trim() !== ""
-          ? Number(property.rooms)
-          : undefined;
+        roomsFromType != null
+          ? roomsFromType
+          : property.type === "residential" && property.rooms.trim() !== ""
+            ? Number(property.rooms)
+            : undefined;
+
+      if (isCondo && !property.blockNumber.trim()) {
+        toast({
+          title: "Block number required",
+          description: "Enter the condominium block number.",
+          variant: "destructive",
+        });
+        setSaving(false);
+        return;
+      }
+      if (isCondo && !property.roomType) {
+        toast({
+          title: "Room type required",
+          description: "Select Studio, 1 Bedroom, 2 Bedroom, or 3 Bedroom.",
+          variant: "destructive",
+        });
+        setSaving(false);
+        return;
+      }
 
       const propertyRes = await api.post<{ id: string }>("/properties", {
         type: property.type,
@@ -186,6 +223,8 @@ export default function AddPropertyPage() {
         woreda: property.woreda,
         kebele: property.kebele,
         houseNumber: property.houseNumber,
+        blockNumber: isCondo ? property.blockNumber.trim() : undefined,
+        roomType: isCondo ? property.roomType : undefined,
         rooms: roomsValue,
         area: Number(property.area),
         latitude: property.latitude ? Number(property.latitude) : undefined,
@@ -201,7 +240,6 @@ export default function AddPropertyPage() {
           gender: tenant.gender,
           phone: tenant.phone,
           nationalId: tenant.nationalId || undefined,
-          address: tenant.address || undefined,
           familySize: Number(tenant.familySize),
           status: tenant.status,
         });
@@ -209,24 +247,45 @@ export default function AddPropertyPage() {
       }
 
       if (offerType === "rent" && tenantId) {
+        if (!rent.noFixedEnd && !rent.endDate) {
+          toast({
+            title: "End date required",
+            description:
+              "Select an end date or mark the agreement as Unknown / No Fixed End Date.",
+            variant: "destructive",
+          });
+          setSaving(false);
+          return;
+        }
         const fd = new FormData();
         fd.append("propertyId", propertyId);
         fd.append("tenantId", tenantId);
         fd.append("startDate", rent.startDate);
-        if (rent.endDate) fd.append("endDate", rent.endDate);
+        if (!rent.noFixedEnd && rent.endDate) fd.append("endDate", rent.endDate);
         fd.append("monthlyRent", rent.monthlyRent);
         if (agreementFile) fd.append("agreementFile", agreementFile);
         await api.post("/rentals", fd);
       }
 
       if (offerType === "sale" && tenantId) {
+        const salePayload = salePayloadFromForm(sale);
+        if (
+          sale.paymentMode === "partial" &&
+          salePayload.downPayment >= salePayload.totalPrice
+        ) {
+          toast({
+            title: "Invalid initial payment",
+            description:
+              "For partially paid sales, the initial amount must be less than the total price.",
+            variant: "destructive",
+          });
+          setSaving(false);
+          return;
+        }
         await api.post("/sales", {
           propertyId,
           buyerId: tenantId,
-          totalPrice: Number(sale.totalPrice),
-          downPayment: Number(sale.downPayment),
-          durationMonths: Number(sale.durationMonths),
-          startDate: sale.startDate,
+          ...salePayload,
         });
       }
 
@@ -341,7 +400,12 @@ export default function AddPropertyPage() {
               <Select
                 value={property.category}
                 onValueChange={(v) =>
-                  setProperty((f) => ({ ...f, category: v }))
+                  setProperty((f) => ({
+                    ...f,
+                    category: v,
+                    blockNumber: v === "condominium" ? f.blockNumber : "",
+                    roomType: v === "condominium" ? f.roomType : "",
+                  }))
                 }
               >
                 <SelectTrigger>
@@ -404,6 +468,48 @@ export default function AddPropertyPage() {
                 required
               />
             </div>
+            {property.category === "condominium" ? (
+              <>
+                <div>
+                  <Label>Block number</Label>
+                  <Input
+                    value={property.blockNumber}
+                    onChange={(e) =>
+                      setProperty((f) => ({
+                        ...f,
+                        blockNumber: e.target.value,
+                      }))
+                    }
+                    placeholder="e.g. Block A"
+                    required
+                  />
+                </div>
+                <div>
+                  <Label>Room type</Label>
+                  <Select
+                    value={property.roomType || undefined}
+                    onValueChange={(v) =>
+                      setProperty((f) => ({
+                        ...f,
+                        roomType: v,
+                        rooms: String(roomsFromCondoRoomType(v) ?? ""),
+                      }))
+                    }
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select room type" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {CONDO_ROOM_TYPES.map((r) => (
+                        <SelectItem key={r.value} value={r.value}>
+                          {r.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </>
+            ) : null}
             <div>
               <Label>Area (m²)</Label>
               <Input
@@ -417,7 +523,8 @@ export default function AddPropertyPage() {
                 required
               />
             </div>
-            {property.type === "residential" ? (
+            {property.type === "residential" &&
+            property.category !== "condominium" ? (
               <div>
                 <Label>Rooms (optional)</Label>
                 <Input
@@ -430,9 +537,9 @@ export default function AddPropertyPage() {
                   placeholder="Leave blank if unknown"
                 />
               </div>
-            ) : (
+            ) : property.category !== "condominium" ? (
               <div />
-            )}
+            ) : null}
             <div className="sm:col-span-2">
               <GpsLocationFields
                 latitude={property.latitude}
@@ -564,15 +671,6 @@ export default function AddPropertyPage() {
                     required
                   />
                 </div>
-                <div className="sm:col-span-2">
-                  <Label>Address</Label>
-                  <Input
-                    value={tenant.address}
-                    onChange={(e) =>
-                      setTenant((f) => ({ ...f, address: e.target.value }))
-                    }
-                  />
-                </div>
               </div>
             ) : null}
 
@@ -646,15 +744,38 @@ export default function AddPropertyPage() {
                     required
                   />
                 </div>
-                <div>
+                <div className="space-y-2">
                   <Label>End date</Label>
-                  <Input
-                    type="date"
-                    value={rent.endDate}
-                    onChange={(e) =>
-                      setRent((f) => ({ ...f, endDate: e.target.value }))
-                    }
-                  />
+                  <div className="flex items-center justify-between gap-3 rounded-md border px-3 py-2">
+                    <div>
+                      <p className="text-sm font-medium">
+                        Unknown / No Fixed End Date
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        Leave the lease open-ended
+                      </p>
+                    </div>
+                    <Switch
+                      checked={rent.noFixedEnd}
+                      onCheckedChange={(checked) =>
+                        setRent((f) => ({
+                          ...f,
+                          noFixedEnd: checked,
+                          endDate: checked ? "" : f.endDate,
+                        }))
+                      }
+                    />
+                  </div>
+                  {!rent.noFixedEnd ? (
+                    <Input
+                      type="date"
+                      value={rent.endDate}
+                      onChange={(e) =>
+                        setRent((f) => ({ ...f, endDate: e.target.value }))
+                      }
+                      required
+                    />
+                  ) : null}
                 </div>
                 <div>
                   <Label>Monthly rent (ETB)</Label>
@@ -683,60 +804,7 @@ export default function AddPropertyPage() {
             ) : null}
 
             {offerType === "sale" ? (
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                <div>
-                  <Label>Total price (ETB)</Label>
-                  <Input
-                    type="number"
-                    min={0}
-                    step="0.01"
-                    value={sale.totalPrice}
-                    onChange={(e) =>
-                      setSale((f) => ({ ...f, totalPrice: e.target.value }))
-                    }
-                    required
-                  />
-                </div>
-                <div>
-                  <Label>Down payment (ETB)</Label>
-                  <Input
-                    type="number"
-                    min={0}
-                    step="0.01"
-                    value={sale.downPayment}
-                    onChange={(e) =>
-                      setSale((f) => ({ ...f, downPayment: e.target.value }))
-                    }
-                    required
-                  />
-                </div>
-                <div>
-                  <Label>Duration (months)</Label>
-                  <Input
-                    type="number"
-                    min={1}
-                    value={sale.durationMonths}
-                    onChange={(e) =>
-                      setSale((f) => ({
-                        ...f,
-                        durationMonths: e.target.value,
-                      }))
-                    }
-                    required
-                  />
-                </div>
-                <div>
-                  <Label>Start date</Label>
-                  <Input
-                    type="date"
-                    value={sale.startDate}
-                    onChange={(e) =>
-                      setSale((f) => ({ ...f, startDate: e.target.value }))
-                    }
-                    required
-                  />
-                </div>
-              </div>
+              <SalePaymentFields value={sale} onChange={setSale} />
             ) : null}
 
             {offerType === "none" ? (

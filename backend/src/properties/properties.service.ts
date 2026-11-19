@@ -13,7 +13,10 @@ import {
   PaginationQuery,
 } from '../common/pagination';
 import { PrismaService } from '../prisma/prisma.service';
-import { saleTotals } from '../sales/sale-calculations.util';
+import {
+  buildSalePaymentSchedule,
+  saleTotals,
+} from '../sales/sale-calculations.util';
 import { CreatePropertyDocumentDto } from './dto/create-property-document.dto';
 import { CreatePropertyDto } from './dto/create-property.dto';
 import { UpdatePropertyDto } from './dto/update-property.dto';
@@ -27,6 +30,26 @@ export class PropertiesService {
     if (type === PropertyType.commercial) return null;
     if (rooms == null || Number.isNaN(rooms as number)) return null;
     return rooms;
+  }
+
+  private normalizeCondoFields(
+    category: PropertyCategory | null | undefined,
+    blockNumber?: string | null,
+    roomType?: string | null,
+  ) {
+    const isCondo = category === PropertyCategory.condominium;
+    return {
+      blockNumber: isCondo
+        ? blockNumber?.trim()
+          ? blockNumber.trim()
+          : null
+        : null,
+      roomType: isCondo
+        ? roomType?.trim()
+          ? roomType.trim()
+          : null
+        : null,
+    };
   }
 
   async findAll(
@@ -95,6 +118,8 @@ export class PropertiesService {
         woreda: p.woreda,
         kebele: p.kebele,
         houseNumber: p.houseNumber,
+        blockNumber: p.blockNumber,
+        roomType: p.roomType,
         area: Number(p.area),
         rooms: p.rooms,
         latitude: p.latitude != null ? Number(p.latitude) : null,
@@ -219,6 +244,8 @@ export class PropertiesService {
         woreda: p.woreda,
         kebele: p.kebele,
         houseNumber: p.houseNumber,
+        blockNumber: p.blockNumber,
+        roomType: p.roomType,
         rooms: p.rooms,
         area: Number(p.area),
         status: p.status,
@@ -263,6 +290,13 @@ export class PropertiesService {
       sale: sale
         ? (() => {
             const m = saleTotals(sale.totalPrice, sale.payments);
+            const downPayment = Number(sale.downPayment);
+            const plan = buildSalePaymentSchedule({
+              totalPrice: m.totalPrice,
+              downPayment,
+              durationMonths: sale.durationMonths,
+              startDate: sale.startDate,
+            });
             return {
               id: sale.id,
               buyer: {
@@ -271,8 +305,12 @@ export class PropertiesService {
                 phone: sale.buyer.phone,
               },
               totalPrice: m.totalPrice,
-              downPayment: Number(sale.downPayment),
+              downPayment,
               durationMonths: sale.durationMonths,
+              paymentMode: plan.paymentMode,
+              monthlyInstallment: plan.monthlyPayment,
+              plannedRemaining: plan.remainingBalance,
+              paymentSchedule: plan.schedule,
               startDate: sale.startDate,
               status: sale.status,
               totalPaid: m.totalPaid,
@@ -318,6 +356,11 @@ export class PropertiesService {
   async create(dto: CreatePropertyDto) {
     assertPropertyCategoryType(dto.type, dto.category);
     const rooms = this.resolveRooms(dto.type, dto.rooms);
+    const condo = this.normalizeCondoFields(
+      dto.category ?? null,
+      dto.blockNumber,
+      dto.roomType,
+    );
 
     try {
       return await this.prisma.property.create({
@@ -329,6 +372,8 @@ export class PropertiesService {
           woreda: dto.woreda,
           kebele: dto.kebele,
           houseNumber: dto.houseNumber.trim(),
+          blockNumber: condo.blockNumber,
+          roomType: condo.roomType,
           rooms,
           area: dto.area,
           status: dto.status ?? PropertyStatus.available,
@@ -365,6 +410,20 @@ export class PropertiesService {
     if (dto.status !== undefined) data.status = dto.status;
     if (dto.latitude !== undefined) data.latitude = dto.latitude;
     if (dto.longitude !== undefined) data.longitude = dto.longitude;
+
+    if (
+      dto.blockNumber !== undefined ||
+      dto.roomType !== undefined ||
+      dto.category !== undefined
+    ) {
+      const condo = this.normalizeCondoFields(
+        nextCategory,
+        dto.blockNumber !== undefined ? dto.blockNumber : existing.blockNumber,
+        dto.roomType !== undefined ? dto.roomType : existing.roomType,
+      );
+      data.blockNumber = condo.blockNumber;
+      data.roomType = condo.roomType;
+    }
 
     if (dto.rooms !== undefined || dto.type !== undefined) {
       const roomsInput = dto.rooms !== undefined ? dto.rooms : existing.rooms;

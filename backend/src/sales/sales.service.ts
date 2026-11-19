@@ -10,7 +10,10 @@ import {
   PaginationQuery,
 } from '../common/pagination';
 import { PrismaService } from '../prisma/prisma.service';
-import { saleTotals } from './sale-calculations.util';
+import {
+  buildSalePaymentSchedule,
+  saleTotals,
+} from './sale-calculations.util';
 import { CreateSaleDto } from './dto/create-sale.dto';
 
 @Injectable()
@@ -35,12 +38,21 @@ export class SalesService {
 
     const items = sales.map((s) => {
       const m = saleTotals(s.totalPrice, s.payments);
+      const downPayment = Number(s.downPayment);
+      const plan = buildSalePaymentSchedule({
+        totalPrice: m.totalPrice,
+        downPayment,
+        durationMonths: s.durationMonths,
+        startDate: s.startDate,
+      });
       return {
         id: s.id,
         status: s.status,
         startDate: s.startDate,
         durationMonths: s.durationMonths,
-        downPayment: Number(s.downPayment),
+        downPayment,
+        paymentMode: plan.paymentMode,
+        monthlyInstallment: plan.monthlyPayment,
         property: {
           id: s.property.id,
           houseNumber: s.property.houseNumber,
@@ -71,6 +83,12 @@ export class SalesService {
     if (!s) throw new NotFoundException('Sale not found');
     const m = saleTotals(s.totalPrice, s.payments);
     const downPayment = Number(s.downPayment);
+    const plan = buildSalePaymentSchedule({
+      totalPrice: m.totalPrice,
+      downPayment,
+      durationMonths: s.durationMonths,
+      startDate: s.startDate,
+    });
     const installmentsPaid = Math.max(
       0,
       Math.round((m.totalPaid - Math.min(m.totalPaid, downPayment)) * 100) / 100,
@@ -81,6 +99,10 @@ export class SalesService {
       startDate: s.startDate,
       durationMonths: s.durationMonths,
       downPayment,
+      paymentMode: plan.paymentMode,
+      monthlyInstallment: plan.monthlyPayment,
+      plannedRemaining: plan.remainingBalance,
+      paymentSchedule: plan.schedule,
       property: s.property,
       buyer: s.buyer,
       payments: s.payments.map((p) => ({
@@ -113,6 +135,23 @@ export class SalesService {
     const buyer = await this.prisma.tenant.findUnique({ where: { id: dto.buyerId } });
     if (!buyer) throw new NotFoundException('Buyer (tenant record) not found');
 
+    if (dto.downPayment > dto.totalPrice) {
+      throw new BadRequestException(
+        'Initial paid amount cannot exceed the total price',
+      );
+    }
+
+    const remaining =
+      Math.round((dto.totalPrice - dto.downPayment) * 100) / 100;
+    const fullyPaid = remaining <= 0;
+    if (!fullyPaid && dto.durationMonths < 1) {
+      throw new BadRequestException(
+        'Specify the number of months to pay the remaining balance',
+      );
+    }
+    const downPayment = fullyPaid ? dto.totalPrice : dto.downPayment;
+    const durationMonths = fullyPaid ? 0 : dto.durationMonths;
+
     return this.prisma.$transaction(async (tx) => {
       const startDate = new Date(dto.startDate);
       const sale = await tx.sale.create({
@@ -120,17 +159,17 @@ export class SalesService {
           propertyId: dto.propertyId,
           buyerId: dto.buyerId,
           totalPrice: dto.totalPrice,
-          downPayment: dto.downPayment,
-          durationMonths: dto.durationMonths,
+          downPayment,
+          durationMonths,
           startDate,
-          status: 'active',
+          status: fullyPaid ? 'completed' : 'active',
         },
       });
-      if (dto.downPayment > 0) {
+      if (downPayment > 0) {
         await tx.salePayment.create({
           data: {
             saleId: sale.id,
-            amount: dto.downPayment,
+            amount: downPayment,
             paidAt: startDate,
             method: 'bank',
           },

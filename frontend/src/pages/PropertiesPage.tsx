@@ -36,6 +36,10 @@ import {
 import { StatusBadge } from "@/components/chrms/StatusBadge";
 import { ConfirmActionDialog } from "@/components/chrms/ConfirmActionDialog";
 import {
+  CONDO_ROOM_TYPES,
+  roomsFromCondoRoomType,
+} from "@/lib/condo-options";
+import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -67,6 +71,8 @@ type PropertyRow = {
   category: string | null;
   status: string;
   assignee: string | null;
+  blockNumber?: string | null;
+  roomType?: string | null;
   rooms: number | null;
   area?: number;
 };
@@ -78,6 +84,8 @@ type EditForm = {
   type: string;
   category: string;
   status: string;
+  blockNumber: string;
+  roomType: string;
   rooms: string;
   area: string;
 };
@@ -99,6 +107,8 @@ export default function PropertiesPage() {
     type: "residential",
     category: "",
     status: "available",
+    blockNumber: "",
+    roomType: "",
     rooms: "",
     area: "",
   });
@@ -162,6 +172,8 @@ export default function PropertiesPage() {
         type: p.type ?? row.type,
         category: p.category ?? row.category ?? "",
         status: p.status ?? row.status,
+        blockNumber: p.blockNumber ?? row.blockNumber ?? "",
+        roomType: p.roomType ?? row.roomType ?? "",
         rooms: p.rooms != null ? String(p.rooms) : "",
         area: p.area != null ? String(p.area) : "",
       });
@@ -179,6 +191,26 @@ export default function PropertiesPage() {
     if (!editing) return;
     try {
       setSavingEdit(true);
+      const isCondo = editForm.category === "condominium";
+      if (isCondo && !editForm.blockNumber.trim()) {
+        toast({
+          title: "Block number required",
+          description: "Enter the condominium block number.",
+          variant: "destructive",
+        });
+        return;
+      }
+      if (isCondo && !editForm.roomType) {
+        toast({
+          title: "Room type required",
+          description: "Select a condominium room type.",
+          variant: "destructive",
+        });
+        return;
+      }
+      const condoRooms = isCondo
+        ? roomsFromCondoRoomType(editForm.roomType)
+        : undefined;
       await api.put(`/properties/${editing.id}`, {
         houseNumber: editForm.houseNumber.trim(),
         woreda: editForm.woreda.trim(),
@@ -186,10 +218,14 @@ export default function PropertiesPage() {
         type: editForm.type,
         category: editForm.category || null,
         status: editForm.status,
+        blockNumber: isCondo ? editForm.blockNumber.trim() : null,
+        roomType: isCondo ? editForm.roomType : null,
         rooms:
-          editForm.type === "residential" && editForm.rooms !== ""
-            ? Number(editForm.rooms)
-            : null,
+          condoRooms != null
+            ? condoRooms
+            : editForm.type === "residential" && editForm.rooms !== ""
+              ? Number(editForm.rooms)
+              : null,
         area: editForm.area !== "" ? Number(editForm.area) : undefined,
       });
       toast({ title: "Property updated" });
@@ -499,6 +535,9 @@ export default function PropertiesPage() {
                   setEditForm((f) => ({
                     ...f,
                     category: v === "none" ? "" : v,
+                    blockNumber:
+                      v === "condominium" ? f.blockNumber : "",
+                    roomType: v === "condominium" ? f.roomType : "",
                   }))
                 }
               >
@@ -532,6 +571,47 @@ export default function PropertiesPage() {
                 </SelectContent>
               </Select>
             </div>
+            {editForm.category === "condominium" ? (
+              <>
+                <div>
+                  <Label>Block number</Label>
+                  <Input
+                    value={editForm.blockNumber}
+                    onChange={(e) =>
+                      setEditForm((f) => ({
+                        ...f,
+                        blockNumber: e.target.value,
+                      }))
+                    }
+                    required
+                  />
+                </div>
+                <div>
+                  <Label>Room type</Label>
+                  <Select
+                    value={editForm.roomType || undefined}
+                    onValueChange={(v) =>
+                      setEditForm((f) => ({
+                        ...f,
+                        roomType: v,
+                        rooms: String(roomsFromCondoRoomType(v) ?? ""),
+                      }))
+                    }
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select room type" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {CONDO_ROOM_TYPES.map((r) => (
+                        <SelectItem key={r.value} value={r.value}>
+                          {r.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </>
+            ) : null}
             <div>
               <Label>Area (m²)</Label>
               <Input
@@ -544,7 +624,8 @@ export default function PropertiesPage() {
                 }
               />
             </div>
-            {editForm.type === "residential" ? (
+            {editForm.type === "residential" &&
+            editForm.category !== "condominium" ? (
               <div className="col-span-2">
                 <Label>Rooms</Label>
                 <Input

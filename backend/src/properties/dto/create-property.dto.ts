@@ -27,6 +27,16 @@ export class CreatePropertyDto {
   @IsString()
   houseNumber: string;
 
+  /** Condominium block number */
+  @IsOptional()
+  @IsString()
+  blockNumber?: string;
+
+  /** Condominium room type: studio | one_bedroom | two_bedroom | three_bedroom */
+  @IsOptional()
+  @IsString()
+  roomType?: string;
+
   /** Optional for residential; ignored for commercial */
   @IsOptional()
   @IsInt()
